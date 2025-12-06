@@ -111,9 +111,15 @@ def _summarize_history_changes(changes):
     summary_parts = []
 
     if added_fields:
-        summary_parts.append(f"{add_color}Added: {', '.join(added_fields)}{reset_color}")
+        unique_added = list(dict.fromkeys(added_fields))
+        summary_parts.append(
+            f"{add_color}Fields added: {', '.join(unique_added)}{reset_color}"
+        )
     if removed_fields:
-        summary_parts.append(f"{remove_color}Removed: {', '.join(removed_fields)}{reset_color}")
+        unique_removed = list(dict.fromkeys(removed_fields))
+        summary_parts.append(
+            f"{remove_color}Fields removed: {', '.join(unique_removed)}{reset_color}"
+        )
     summary_parts.extend(other_changes)
 
     return " | ".join(summary_parts)
