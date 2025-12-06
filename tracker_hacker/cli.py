@@ -11,6 +11,7 @@ from tracker_hacker.audit import master_audit
 from tracker_hacker.data_loader import load_source_data_csv
 from tracker_hacker.history_restore import (
     build_history_state_options,
+    get_history_tracker_names,
     restore_tracker_state,
     write_restore_report,
 )
@@ -274,98 +275,119 @@ def main_loop():
                                 print(f"Failed to load history CSV '{selected_history_csv}': {exc}")
                                 operation_flow_control = "return_to_menu"
                             else:
-                                tracker_name_choices = sorted(state.main_df['Tracker'].dropna().astype(str).unique())
-                                tracker_name_default = tracker_name_choices[0] if tracker_name_choices else ""
-                                tracker_name_selected = questionary.autocomplete(
-                                    "Tracker to restore:",
-                                    choices=tracker_name_choices,
-                                    default=tracker_name_default
-                                ).ask()
-                                if tracker_name_selected is None:
-                                    operation_flow_control = handle_cancel("Tracker selection cancelled.", return_to_menu=True)
+                                tracker_name_choices = get_history_tracker_names(history_df)
+                                if not tracker_name_choices:
+                                    print("History CSV is missing tracker names in the 'Tracker' column.")
+                                    operation_flow_control = "return_to_menu"
                                 else:
-                                    try:
-                                        history_state_options = build_history_state_options(history_df, tracker_name_selected)
-                                    except ValueError as exc:
-                                        print(f"Restore failed: {exc}")
-                                        operation_flow_control = "return_to_menu"
+                                    tracker_name_default = tracker_name_choices[0] if tracker_name_choices else ""
+                                    tracker_name_selected = questionary.autocomplete(
+                                        "Tracker to restore:",
+                                        choices=tracker_name_choices,
+                                        default=tracker_name_default
+                                    ).ask()
+                                    if tracker_name_selected is None:
+                                        operation_flow_control = handle_cancel("Tracker selection cancelled.", return_to_menu=True)
                                     else:
-                                        if not history_state_options:
-                                            print("No history states available for this tracker.")
+                                        try:
+                                            history_state_options = build_history_state_options(history_df, tracker_name_selected)
+                                        except ValueError as exc:
+                                            print(f"Restore failed: {exc}")
                                             operation_flow_control = "return_to_menu"
                                         else:
-                                            state_choices = [
-                                                Choice(
-                                                    title=f"{opt.restore_to} – {', '.join(opt.fields_changed)} ({len(opt.history_row_indices)} change(s))",
-                                                    value=opt.restore_to
-                                                )
-                                                for opt in history_state_options
-                                            ]
-                                            state_choices.insert(0, Choice(title="<Cancel>", value=None))
-                                            chosen_state_ts = questionary.select(
-                                                "Select restore state (grouped by Modify Date):",
-                                                choices=state_choices
-                                            ).ask()
-                                            if chosen_state_ts is None:
-                                                operation_flow_control = handle_cancel("Restore state selection cancelled.", return_to_menu=True)
+                                            if not history_state_options:
+                                                print("No history states available for this tracker.")
+                                                operation_flow_control = "return_to_menu"
                                             else:
-                                                try:
-                                                    restore_result = restore_tracker_state(
-                                                        state.main_df,
-                                                        history_df,
-                                                        tracker_name_selected,
-                                                        chosen_state_ts
+                                                state_choices = []
+                                                for opt in history_state_options:
+                                                    change_descriptions = [
+                                                        f"{chg['field']}: {chg.get('old_value')} -> {chg.get('new_value')}"
+                                                        for chg in opt.changes
+                                                    ]
+                                                    change_summary = "; ".join(change_descriptions) if change_descriptions else "No change details recorded"
+                                                    state_choices.append(
+                                                        Choice(
+                                                            title=f"{opt.restore_to} – {change_summary}",
+                                                            value=opt
+                                                        )
                                                     )
-                                                except ValueError as exc:
-                                                    print(f"Restore failed: {exc}")
-                                                    operation_flow_control = "return_to_menu"
+                                                state_choices.insert(0, Choice(title="<Cancel>", value=None))
+                                                chosen_state_option = questionary.select(
+                                                    "Select restore state (grouped by Modify Date):",
+                                                    choices=state_choices
+                                                ).ask()
+                                                if chosen_state_option is None:
+                                                    operation_flow_control = handle_cancel("Restore state selection cancelled.", return_to_menu=True)
                                                 else:
-                                                    print(f"\nRestored tracker '{restore_result.tracker_name}' back to {restore_result.restore_to}.")
-                                                    if restore_result.applied_changes:
-                                                        print("Applied changes:")
-                                                        for change in restore_result.applied_changes:
+                                                    changes_for_state = chosen_state_option.changes if chosen_state_option.changes else []
+                                                    if changes_for_state:
+                                                        print("\nChanges recorded at the selected timestamp:")
+                                                        for change in changes_for_state:
                                                             print(
-                                                                f"  - {change['field']}: {change['current_value']} -> {change['restored_value']}"
-                                                                f" (recorded {change['change_recorded_at']}, by {change.get('modified_by') or 'unknown'})"
+                                                                f"  - {change['field']}: {change.get('old_value')} -> {change.get('new_value')}"
+                                                                f" (by {change.get('modified_by') or 'unknown'})"
                                                             )
                                                     else:
-                                                        print("No changes applied; current tracker already matches requested point in time.")
-
-                                                    if restore_result.delta:
-                                                        print("\nBefore vs. restored snapshot:")
-                                                        for diff in restore_result.delta:
-                                                            print(f"  * {diff['column']}: '{diff['before']}' -> '{diff['after']}'")
-
-                                                    if restore_result.skipped_changes:
-                                                        print("\nSkipped history rows:")
-                                                        for skip in restore_result.skipped_changes:
-                                                            print(f"  - {skip.get('reason', 'Unknown reason')}")
+                                                        print("\nNo detailed change records found at the selected timestamp.")
 
                                                     try:
-                                                        replace_in_memory = questionary.confirm(
-                                                            "Replace in-memory tracker row with restored values?", default=False
-                                                        ).ask()
-                                                        if replace_in_memory:
-                                                            selector = state.main_df['Tracker'].astype(str) == restore_result.tracker_name
-                                                            state.main_df.loc[selector, restore_result.restored_row.index] = restore_result.restored_row.values
-                                                            print("In-memory tracker updated with restored snapshot.")
-
-                                                        save_reports = questionary.confirm(
-                                                            "Save restore summary and restored row to outputs/ directory?", default=True
-                                                        ).ask()
-                                                    except KeyboardInterrupt:
-                                                        operation_flow_control = handle_cancel("Restore confirmation interrupted.", return_to_menu=True)
+                                                        restore_result = restore_tracker_state(
+                                                            state.main_df,
+                                                            history_df,
+                                                            tracker_name_selected,
+                                                            chosen_state_option.restore_to
+                                                        )
+                                                    except ValueError as exc:
+                                                        print(f"Restore failed: {exc}")
+                                                        operation_flow_control = "return_to_menu"
                                                     else:
-                                                        if save_reports:
-                                                            ts_restore = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                                            report_paths = write_restore_report(
-                                                                restore_result,
-                                                                output_dir,
-                                                                filename_prefix=f"restore_{restore_result.tracker_name}_{ts_restore}"
-                                                            )
-                                                            print(f"Summary saved to {report_paths['summary']}")
-                                                            print(f"Restored row saved to {report_paths['restored_row']}")
-                                                    operation_flow_control = "return_to_menu"
+                                                        print(f"\nRestored tracker '{restore_result.tracker_name}' back to {restore_result.restore_to}.")
+                                                        if restore_result.applied_changes:
+                                                            print("Applied changes:")
+                                                            for change in restore_result.applied_changes:
+                                                                print(
+                                                                        f"  - {change['field']}: {change['current_value']} -> {change['restored_value']}"
+                                                                        f" (recorded {change['change_recorded_at']}, by {change.get('modified_by') or 'unknown'})"
+                                                                    )
+                                                            else:
+                                                                print("No changes applied; current tracker already matches requested point in time.")
+
+                                                            if restore_result.delta:
+                                                                print("\nBefore vs. restored snapshot:")
+                                                                for diff in restore_result.delta:
+                                                                    print(f"  * {diff['column']}: '{diff['before']}' -> '{diff['after']}'")
+
+                                                            if restore_result.skipped_changes:
+                                                                print("\nSkipped history rows:")
+                                                                for skip in restore_result.skipped_changes:
+                                                                    print(f"  - {skip.get('reason', 'Unknown reason')}")
+
+                                                            try:
+                                                                replace_in_memory = questionary.confirm(
+                                                                    "Replace in-memory tracker row with restored values?", default=False
+                                                                ).ask()
+                                                                if replace_in_memory:
+                                                                    selector = state.main_df['Tracker'].astype(str) == restore_result.tracker_name
+                                                                    state.main_df.loc[selector, restore_result.restored_row.index] = restore_result.restored_row.values
+                                                                    print("In-memory tracker updated with restored snapshot.")
+
+                                                                save_reports = questionary.confirm(
+                                                                    "Save restore summary and restored row to outputs/ directory?", default=True
+                                                                ).ask()
+                                                            except KeyboardInterrupt:
+                                                                operation_flow_control = handle_cancel("Restore confirmation interrupted.", return_to_menu=True)
+                                                            else:
+                                                                if save_reports:
+                                                                    ts_restore = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                                                    report_paths = write_restore_report(
+                                                                        restore_result,
+                                                                        output_dir,
+                                                                        filename_prefix=f"restore_{restore_result.tracker_name}_{ts_restore}"
+                                                                    )
+                                                                    print(f"Summary saved to {report_paths['summary']}")
+                                                                    print(f"Restored row saved to {report_paths['restored_row']}")
+                                                            operation_flow_control = "return_to_menu"
                 except KeyboardInterrupt:
                     operation_flow_control = handle_cancel("Restore setup interrupted.", return_to_menu=True)
             elif chosen_action == "audit":
