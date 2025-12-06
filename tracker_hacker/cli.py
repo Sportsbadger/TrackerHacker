@@ -392,17 +392,6 @@ def main_loop():
                                                     if chosen_state_option is None:
                                                         operation_flow_control = handle_cancel("Restore state selection cancelled.", return_to_menu=True)
                                                     else:
-                                                        changes_for_state = chosen_state_option.changes if chosen_state_option.changes else []
-                                                        if changes_for_state:
-                                                            print("\nChanges recorded at the selected timestamp:")
-                                                            for change in changes_for_state:
-                                                                print(
-                                                                    f"  - {change['field']}: {change.get('old_value')} -> {change.get('new_value')}"
-                                                                    f" (by {change.get('modified_by') or 'unknown'})"
-                                                                )
-                                                        else:
-                                                            print("\nNo detailed change records found at the selected timestamp.")
-
                                                         try:
                                                             restore_result = restore_tracker_state(
                                                                 state.main_df,
@@ -414,53 +403,19 @@ def main_loop():
                                                             print(f"Restore failed: {exc}")
                                                             operation_flow_control = "return_to_menu"
                                                         else:
-                                                            print(f"\nRestored tracker '{restore_result.tracker_name}' back to {restore_result.restore_to}.")
-                                                            if restore_result.applied_changes:
-                                                                print("Applied changes:")
-                                                                for change in restore_result.applied_changes:
-                                                                    print(
-                                                                        f"  - {change['field']}: {change['current_value']} -> {change['restored_value']}"
-                                                                        f" (recorded {change['change_recorded_at']}, by {change.get('modified_by') or 'unknown'})"
-                                                                    )
-                                                            else:
-                                                                print("No changes applied; current tracker already matches requested point in time.")
+                                                            selector = state.main_df['Tracker'].astype(str) == restore_result.tracker_name
+                                                            state.main_df.loc[selector, restore_result.restored_row.index] = restore_result.restored_row.values
 
-                                                            if restore_result.delta:
-                                                                print("\nBefore vs. restored snapshot:")
-                                                                for diff in restore_result.delta:
-                                                                    print(f"  * {diff['column']}: '{diff['before']}' -> '{diff['after']}'")
-
-                                                            if restore_result.skipped_changes:
-                                                                print("\nSkipped history rows:")
-                                                                for skip in restore_result.skipped_changes:
-                                                                    print(f"  - {skip.get('reason', 'Unknown reason')}")
-
-                                                            try:
-                                                                print("\nUpdating the in-memory dataset lets subsequent actions use the restored values during this session.")
-                                                                replace_in_memory = questionary.confirm(
-                                                                    "Update the in-memory tracker row with the restored snapshot?",
-                                                                    default=True
-                                                                ).ask()
-                                                                if replace_in_memory:
-                                                                    selector = state.main_df['Tracker'].astype(str) == restore_result.tracker_name
-                                                                    state.main_df.loc[selector, restore_result.restored_row.index] = restore_result.restored_row.values
-                                                                    print("In-memory tracker updated with restored snapshot.")
-
-                                                                save_reports = questionary.confirm(
-                                                                    "Save restore summary and restored row to outputs/ directory?", default=True
-                                                                ).ask()
-                                                            except KeyboardInterrupt:
-                                                                operation_flow_control = handle_cancel("Restore confirmation interrupted.", return_to_menu=True)
-                                                            else:
-                                                                if save_reports:
-                                                                    ts_restore = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                                                    report_paths = write_restore_report(
-                                                                        restore_result,
-                                                                        output_dir,
-                                                                        filename_prefix=f"restore_{restore_result.tracker_name}_{ts_restore}"
-                                                                    )
-                                                                    print(f"Summary saved to {report_paths['summary']}")
-                                                                    print(f"Restored row saved to {report_paths['restored_row']}")
+                                                            ts_restore = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                                            report_paths = write_restore_report(
+                                                                restore_result,
+                                                                output_dir,
+                                                                filename_prefix=f"restore_{restore_result.tracker_name}_{ts_restore}"
+                                                            )
+                                                            print(
+                                                                f"\nRestored tracker '{restore_result.tracker_name}' back to {restore_result.restore_to}."
+                                                                f" Summary: {report_paths['summary']} | Restored row: {report_paths['restored_row']}"
+                                                            )
                                                             operation_flow_control = "return_to_menu"
                 except KeyboardInterrupt:
                     operation_flow_control = handle_cancel("Restore setup interrupted.", return_to_menu=True)
