@@ -85,13 +85,38 @@ def _summarize_history_changes(changes):
     if not changes:
         return "No change details recorded"
 
-    summarized_changes = []
+    add_color = "\033[96m"  # cyan/blue
+    remove_color = "\033[91m"  # red
+    reset_color = "\033[0m"
+
+    added_fields = []
+    removed_fields = []
+    other_changes = []
+
     for change in changes:
         field_name = str(change.get("field", "Unknown field")).strip() or "Unknown field"
-        description = _describe_change(change.get("old_value"), change.get("new_value"))
-        summarized_changes.append(f"{field_name}: {description}")
+        old_val = change.get("old_value")
+        new_val = change.get("new_value")
 
-    return " | ".join(summarized_changes)
+        if _is_empty(old_val) and not _is_empty(new_val):
+            added_fields.append(field_name)
+            continue
+        if not _is_empty(old_val) and _is_empty(new_val):
+            removed_fields.append(field_name)
+            continue
+
+        description = _describe_change(old_val, new_val)
+        other_changes.append(f"{field_name}: {description}")
+
+    summary_parts = []
+
+    if added_fields:
+        summary_parts.append(f"{add_color}Added: {', '.join(added_fields)}{reset_color}")
+    if removed_fields:
+        summary_parts.append(f"{remove_color}Removed: {', '.join(removed_fields)}{reset_color}")
+    summary_parts.extend(other_changes)
+
+    return " | ".join(summary_parts)
 
 
 def main_loop():
