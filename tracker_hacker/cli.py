@@ -30,9 +30,13 @@ def _summarize_history_changes(changes):
         except Exception:
             return False
 
-    categories = {"filters": [], "fields": []}
+    buckets = {
+        "filters": {"added": set(), "removed": set(), "updated": set()},
+        "fields": {"added": set(), "removed": set(), "updated": set()}
+    }
+
     for change in changes:
-        field_name = change.get("field", "Unknown field")
+        field_name = str(change.get("field", "Unknown field")).strip() or "Unknown field"
         old_val = change.get("old_value")
         new_val = change.get("new_value")
 
@@ -44,15 +48,21 @@ def _summarize_history_changes(changes):
         elif is_removed:
             action = "removed"
 
-        category_key = "filters" if "filter" in str(field_name).lower() else "fields"
-        categories[category_key].append(f"{field_name} ({action})")
+        category_key = "filters" if "filter" in field_name.lower() else "fields"
+        buckets[category_key][action].add(field_name)
 
-    summary_parts = [f"There were {len(changes)} change(s)"]
-    for label, items in categories.items():
-        if items:
-            summary_parts.append(f"{label.capitalize()}: {', '.join(items)}")
+    summary_parts = []
+    for category, actions in buckets.items():
+        action_summaries = []
+        for action_label in ("added", "removed", "updated"):
+            if actions[action_label]:
+                action_summaries.append(
+                    f"{action_label.capitalize()}: {', '.join(sorted(actions[action_label]))}"
+                )
+        if action_summaries:
+            summary_parts.append(f"{category.capitalize()}: {'; '.join(action_summaries)}")
 
-    return " – ".join(summary_parts) if changes else "No change details recorded"
+    return " – ".join(summary_parts) if summary_parts else "No change details recorded"
 
 
 def main_loop():
