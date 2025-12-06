@@ -7,13 +7,14 @@ import pandas as pd
 
 
 HISTORY_REQUIRED_COLUMNS = [
-    'Tracker Name Id', 'Modify Date', 'Old Value', 'New Value'
+    'Tracker', 'id Tracker', 'Modify Date', 'Old Value', 'New Value'
 ]
 HISTORY_FIELD_COLUMNS = ['Field', 'API Field']
 
 
 @dataclass
 class RestoreResult:
+    tracker_name: str
     tracker_id: str
     restore_to: pd.Timestamp
     before_row: pd.Series
@@ -26,13 +27,14 @@ class RestoreResult:
 
 @dataclass
 class HistoryStateOption:
+    tracker_name: str
     tracker_id: str
     restore_to: pd.Timestamp
     fields_changed: List[str]
     history_row_indices: List[int] = field(default_factory=list)
 
 
-def _normalize_tracker_id(val: Any) -> str:
+def _normalize_tracker_name(val: Any) -> str:
     return str(val).strip() if val is not None else ''
 
 
@@ -75,21 +77,27 @@ def validate_history_dataframe(history_df: pd.DataFrame) -> List[str]:
     return missing_columns
 
 
-def build_history_state_options(history_df: pd.DataFrame, tracker_id: str) -> List[HistoryStateOption]:
+def build_history_state_options(history_df: pd.DataFrame, tracker_name: str) -> List[HistoryStateOption]:
+    history_df = history_df.copy()
+
+    if 'Tracker' not in history_df.columns and 'Tracker Name' in history_df.columns:
+        history_df['Tracker'] = history_df['Tracker Name']
+    if 'id Tracker' not in history_df.columns and 'Tracker Name Id' in history_df.columns:
+        history_df['id Tracker'] = history_df['Tracker Name Id']
+
     missing_cols = validate_history_dataframe(history_df)
     if missing_cols:
         raise ValueError(f"History dataframe missing required columns: {missing_cols}")
 
-    tracker_id_str = _normalize_tracker_id(tracker_id)
-    if not tracker_id_str:
-        raise ValueError("A Tracker Name Id must be provided for restore operations.")
+    tracker_name_str = _normalize_tracker_name(tracker_name)
+    if not tracker_name_str:
+        raise ValueError("A Tracker name must be provided for restore operations.")
 
-    history_df = history_df.copy()
-    history_df['Tracker Name Id'] = history_df['Tracker Name Id'].apply(_normalize_tracker_id)
+    history_df['Tracker'] = history_df['Tracker'].apply(_normalize_tracker_name)
     history_df['__parsed_modify_date'] = history_df['Modify Date'].apply(_parse_timestamp)
 
     tracker_history = history_df[
-        (history_df['Tracker Name Id'] == tracker_id_str) &
+        (history_df['Tracker'] == tracker_name_str) &
         history_df['__parsed_modify_date'].notna()
     ].copy()
 
@@ -106,7 +114,8 @@ def build_history_state_options(history_df: pd.DataFrame, tracker_id: str) -> Li
                 fields_changed.append(field_name)
         options.append(
             HistoryStateOption(
-                tracker_id=tracker_id_str,
+                tracker_name=tracker_name_str,
+                tracker_id=_normalize_tracker_name(group['id Tracker'].iloc[0]),
                 restore_to=modify_ts,
                 fields_changed=fields_changed,
                 history_row_indices=list(group.index),
@@ -117,37 +126,50 @@ def build_history_state_options(history_df: pd.DataFrame, tracker_id: str) -> Li
     return options
 
 
-def restore_tracker_state(current_df: pd.DataFrame, history_df: pd.DataFrame, tracker_id: str,
+def restore_tracker_state(current_df: pd.DataFrame, history_df: pd.DataFrame, tracker_name: str,
                           restore_to: Any) -> RestoreResult:
-    if current_df is None or 'Tracker Name Id' not in current_df.columns:
-        raise ValueError("Current tracker data is not loaded or missing 'Tracker Name Id' column.")
+    if current_df is None:
+        raise ValueError("Current tracker data is not loaded.")
+
+    if 'Tracker' not in current_df.columns:
+        if 'Tracker Name' in current_df.columns:
+            current_df = current_df.copy()
+            current_df['Tracker'] = current_df['Tracker Name']
+        else:
+            raise ValueError("Current tracker data is missing required 'Tracker' column.")
+
+    history_df = history_df.copy()
+    if 'Tracker' not in history_df.columns and 'Tracker Name' in history_df.columns:
+        history_df['Tracker'] = history_df['Tracker Name']
+    if 'id Tracker' not in history_df.columns and 'Tracker Name Id' in history_df.columns:
+        history_df['id Tracker'] = history_df['Tracker Name Id']
 
     missing_history_cols = validate_history_dataframe(history_df)
     if missing_history_cols:
         raise ValueError(f"History dataframe missing required columns: {missing_history_cols}")
 
-    tracker_id_str = _normalize_tracker_id(tracker_id)
-    if not tracker_id_str:
-        raise ValueError("A Tracker Name Id must be provided for restore operations.")
+    tracker_name_str = _normalize_tracker_name(tracker_name)
+    if not tracker_name_str:
+        raise ValueError("A Tracker name must be provided for restore operations.")
 
     parsed_restore_ts = _parse_timestamp(restore_to)
     if parsed_restore_ts is None:
         raise ValueError("Unable to parse restore timestamp. Please provide a valid date/time.")
 
-    tracker_rows = current_df[current_df['Tracker Name Id'].astype(str) == tracker_id_str]
+    tracker_rows = current_df[current_df['Tracker'].astype(str).apply(_normalize_tracker_name) == tracker_name_str]
     if tracker_rows.empty:
-        raise ValueError(f"Tracker '{tracker_id_str}' not found in current dataset.")
+        raise ValueError(f"Tracker '{tracker_name_str}' not found in current dataset.")
 
     base_row = tracker_rows.iloc[0].copy()
+    tracker_id_value = _normalize_tracker_name(base_row.get('id Tracker'))
 
-    history_df = history_df.copy()
     history_df['__parsed_modify_date'] = history_df['Modify Date'].apply(_parse_timestamp)
-    history_df['Tracker Name Id'] = history_df['Tracker Name Id'].apply(_normalize_tracker_id)
+    history_df['Tracker'] = history_df['Tracker'].apply(_normalize_tracker_name)
 
     relevant_history = history_df[
-        (history_df['Tracker Name Id'] == tracker_id_str) &
+        (history_df['Tracker'] == tracker_name_str) &
         history_df['__parsed_modify_date'].notna() &
-        (history_df['__parsed_modify_date'] > parsed_restore_ts)
+        (history_df['__parsed_modify_date'] >= parsed_restore_ts)
     ].sort_values('__parsed_modify_date', ascending=False)
 
     applied_changes: List[Dict[str, Any]] = []
@@ -186,7 +208,8 @@ def restore_tracker_state(current_df: pd.DataFrame, history_df: pd.DataFrame, tr
     delta = _row_delta(base_row, working_row)
 
     return RestoreResult(
-        tracker_id=tracker_id_str,
+        tracker_name=tracker_name_str,
+        tracker_id=tracker_id_value,
         restore_to=parsed_restore_ts,
         before_row=base_row,
         restored_row=working_row,
@@ -200,10 +223,12 @@ def restore_tracker_state(current_df: pd.DataFrame, history_df: pd.DataFrame, tr
 def write_restore_report(result: RestoreResult, output_dir: Path, filename_prefix: Optional[str] = None) -> Dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp_suffix = datetime.now().strftime('%Y%m%d_%H%M%S')
-    prefix = filename_prefix or f"restore_{result.tracker_id}_{timestamp_suffix}"
+    prefix_tracker = result.tracker_name or result.tracker_id
+    prefix = filename_prefix or f"restore_{prefix_tracker}_{timestamp_suffix}"
 
     summary_lines = [
-        f"Tracker Name Id: {result.tracker_id}",
+        f"Tracker: {result.tracker_name}",
+        f"Tracker ID: {result.tracker_id}",
         f"Restore to: {result.restore_to}",
         f"History rows applied: {result.history_rows_used}",
         f"Fields touched: {', '.join(sorted({c['field'] for c in result.applied_changes}) or ['None'])}",

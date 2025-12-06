@@ -73,6 +73,9 @@ def load_source_data_csv():
             print(f"Error: Input CSV '{path_to_load_main_csv.name}' missing required columns: {missing}")
             state.main_df = None
             return False
+
+        if 'Tracker' not in temp_df.columns and 'Tracker Name' in temp_df.columns:
+            temp_df['Tracker'] = temp_df['Tracker Name']
         state.main_df = temp_df
         state.main_df._source_file_name = path_to_load_main_csv.name
         print(f"Successfully loaded {len(state.main_df)} trackers from '{path_to_load_main_csv.name}'.")
