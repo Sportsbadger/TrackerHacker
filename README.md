@@ -49,6 +49,7 @@ You will be prompted for the path to your Sitetracker export CSV (or the directo
 3. **Identify modifications**: Detect where fields need removal, swapping, or addition before committing changes.
 4. **Modify trackers**: Apply removals, swaps, and additions to selected rows. Backup copies of affected rows are preserved. Updated CSVs are written under `outputs/` with timestamps.
 5. **Review outputs**: CSVs and JSON reports are saved in `outputs/`; the CLI can prompt you to open reports directly.
+6. **Restore from history**: Load a tracker history CSV to reconstruct a single tracker to a specific "Modify Date" point in time, update the in-memory dataset, and save a restore report.
 
 ## Module and function guide
 Use these functions directly if you prefer scripting instead of the interactive CLI:
@@ -85,6 +86,16 @@ Helper utilities used across the toolkit:
 - `find_contextual_occurrences_of_field(...)`: Locate canonical field names in text while preserving context.
 - `update_logic(...)`: Rebuild `Logic` expressions after filter removals.
 - `update_query(...)`: Remove references from `Query` clauses based on contextual paths.
+
+### `tracker_hacker.history_restore`
+- `restore_tracker_state(current_df, history_df, tracker_id, restore_to)`: Replays history entries newer than `restore_to` to rebuild the tracker row as it existed at that time and report applied/skipped changes.
+- `write_restore_report(result, output_dir, filename_prefix=None)`: Writes a human-readable summary and CSV snapshot of the restored row.
+
+#### Restoring a tracker from a history CSV via the CLI
+1. Choose **Restore Tracker from History** in the main menu.
+2. Select a tracker history CSV (must include columns like `Tracker Name Id`, `Modify Date`, `Field`/`API Field`, `Old Value`, `New Value`).
+3. Pick the `Tracker Name Id` to restore and enter the target "Modify Date" timestamp to roll back to.
+4. Optionally replace the in-memory tracker row and save a summary plus restored-row CSV under `outputs/`.
 
 ## Outputs
 - Validation and modification artifacts are written under `outputs/` (created automatically).
