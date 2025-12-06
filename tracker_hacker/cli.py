@@ -19,12 +19,6 @@ from tracker_hacker.modifications import identify_modifications, load_swap_pairs
 from tracker_hacker.utils import handle_cancel
 
 
-# Fields to omit from rollback summaries; remove items to re-include later.
-SUMMARY_IGNORED_FIELDS = {"label map"}
-FIELD_HIGHLIGHT_COLOR = "\033[96m"  # bright cyan
-RESET_COLOR = "\033[0m"
-
-
 def _summarize_history_changes(changes):
     def _is_empty(value):
         if value is None:
@@ -84,15 +78,8 @@ def _summarize_history_changes(changes):
     summarized_changes = []
     for change in changes:
         field_name = str(change.get("field", "Unknown field")).strip() or "Unknown field"
-        if field_name.lower() in SUMMARY_IGNORED_FIELDS:
-            continue
-
-        colored_field = f"{FIELD_HIGHLIGHT_COLOR}{field_name}{RESET_COLOR}"
         description = _describe_change(change.get("old_value"), change.get("new_value"))
-        summarized_changes.append(f"{colored_field}: {description}")
-
-    if not summarized_changes:
-        return "No change details recorded"
+        summarized_changes.append(f"{field_name}: {description}")
 
     return " | ".join(summarized_changes)
 
