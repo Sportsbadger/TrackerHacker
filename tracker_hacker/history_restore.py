@@ -61,6 +61,18 @@ def _get_field_name(row: pd.Series) -> Optional[str]:
     return None
 
 
+def _is_label_map_field(field_name: Optional[str]) -> bool:
+    if field_name is None:
+        return False
+    return str(field_name).strip().lower() == 'label map'
+
+
+def _format_value(val: Any) -> str:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return '(empty)'
+    return str(val)
+
+
 def _row_delta(before: pd.Series, after: pd.Series) -> List[Dict[str, Any]]:
     deltas: List[Dict[str, Any]] = []
     for col in before.index:
@@ -122,8 +134,12 @@ def get_history_changes_for_timestamp(history_df: pd.DataFrame, tracker_name: st
 
     changes: List[Dict[str, Any]] = []
     for _, row in change_rows.iterrows():
+        field_name = _get_field_name(row) or 'Unknown field'
+        if _is_label_map_field(field_name):
+            continue
+
         changes.append({
-            'field': _get_field_name(row) or 'Unknown field',
+            'field': field_name,
             'old_value': row.get('Old Value'),
             'new_value': row.get('New Value'),
             'modified_by': row.get('Modified By') or row.get('Last Modified By Name'),
@@ -160,13 +176,19 @@ def build_history_state_options(history_df: pd.DataFrame, tracker_name: str) -> 
     if tracker_history.empty:
         return []
 
+    tracker_history['__field_name'] = tracker_history.apply(_get_field_name, axis=1)
+    tracker_history = tracker_history[~tracker_history['__field_name'].apply(_is_label_map_field)].copy()
+
+    if tracker_history.empty:
+        return []
+
     grouped = tracker_history.groupby('__parsed_modify_date')
     options: List[HistoryStateOption] = []
     for modify_ts, group in grouped:
         fields_changed: List[str] = []
         changes: List[Dict[str, Any]] = []
         for _, row in group.iterrows():
-            field_name = _get_field_name(row) or 'Unknown field'
+            field_name = row.get('__field_name') or _get_field_name(row) or 'Unknown field'
             if field_name not in fields_changed:
                 fields_changed.append(field_name)
             changes.append({
@@ -230,11 +252,14 @@ def restore_tracker_state(current_df: pd.DataFrame, history_df: pd.DataFrame, tr
 
     history_df['__parsed_modify_date'] = history_df['Modify Date'].apply(_parse_timestamp)
     history_df['Tracker'] = history_df['Tracker'].apply(_normalize_tracker_name)
+    history_df['__field_name'] = history_df.apply(_get_field_name, axis=1)
+    history_df['__is_label_map'] = history_df['__field_name'].apply(_is_label_map_field)
 
     relevant_history = history_df[
         (history_df['Tracker'] == tracker_name_str) &
         history_df['__parsed_modify_date'].notna() &
-        (history_df['__parsed_modify_date'] >= parsed_restore_ts)
+        (history_df['__parsed_modify_date'] >= parsed_restore_ts) &
+        (~history_df['__is_label_map'])
     ].sort_values('__parsed_modify_date', ascending=False)
 
     applied_changes: List[Dict[str, Any]] = []
@@ -298,22 +323,39 @@ def write_restore_report(result: RestoreResult, output_dir: Path, filename_prefi
         f"History rows applied: {result.history_rows_used}",
         f"Fields touched: {', '.join(sorted({c['field'] for c in result.applied_changes}) or ['None'])}",
         "",
-        "Applied changes (most recent first):"
+        "Applied changes (most recent first):",
     ]
 
     if result.applied_changes:
         for change in result.applied_changes:
             summary_lines.append(
-                f"- {change['field']}: {change['current_value']} -> {change['restored_value']}"
+                f"- {change['field']}: {_format_value(change['current_value'])} -> {_format_value(change['restored_value'])}"
                 f" (recorded at {change['change_recorded_at']}, by {change.get('modified_by') or 'unknown'})"
             )
     else:
         summary_lines.append("- None (target time is at or after last change)")
 
+    if result.applied_changes:
+        summary_lines.append("\nDetailed applied change breakdown:")
+        summary_lines.append("Field | Current value | Restored value | History new value | Recorded at/by")
+        summary_lines.append("----- | ------------- | -------------- | ----------------- | --------------")
+        for change in result.applied_changes:
+            summary_lines.append(
+                " | ".join([
+                    change['field'],
+                    _format_value(change['current_value']),
+                    _format_value(change['restored_value']),
+                    _format_value(change.get('history_new_value')),
+                    f"{change['change_recorded_at']} by {change.get('modified_by') or 'unknown'}",
+                ])
+            )
+
     if result.delta:
         summary_lines.append("\nBefore vs. restored snapshot:")
         for diff in result.delta:
-            summary_lines.append(f"* {diff['column']}: '{diff['before']}' -> '{diff['after']}'")
+            summary_lines.append(
+                f"* {diff['column']}: '{_format_value(diff['before'])}' -> '{_format_value(diff['after'])}'"
+            )
     else:
         summary_lines.append("\nNo differences between current row and restored snapshot.")
 
