@@ -31,6 +31,7 @@ class HistoryStateOption:
     tracker_id: str
     restore_to: pd.Timestamp
     fields_changed: List[str]
+    changes: List[Dict[str, Any]] = field(default_factory=list)
     history_row_indices: List[int] = field(default_factory=list)
 
 
@@ -77,6 +78,61 @@ def validate_history_dataframe(history_df: pd.DataFrame) -> List[str]:
     return missing_columns
 
 
+def get_history_tracker_names(history_df: pd.DataFrame) -> List[str]:
+    history_df = history_df.copy()
+
+    if 'Tracker' not in history_df.columns and 'Tracker Name' in history_df.columns:
+        history_df['Tracker'] = history_df['Tracker Name']
+
+    if 'Tracker' not in history_df.columns:
+        return []
+
+    history_df['Tracker'] = history_df['Tracker'].apply(_normalize_tracker_name)
+    tracker_names = [name for name in history_df['Tracker'] if name]
+    return sorted(set(tracker_names))
+
+
+def get_history_changes_for_timestamp(history_df: pd.DataFrame, tracker_name: str, restore_to: Any) -> List[Dict[str, Any]]:
+    history_df = history_df.copy()
+
+    if 'Tracker' not in history_df.columns and 'Tracker Name' in history_df.columns:
+        history_df['Tracker'] = history_df['Tracker Name']
+    if 'id Tracker' not in history_df.columns and 'Tracker Name Id' in history_df.columns:
+        history_df['id Tracker'] = history_df['Tracker Name Id']
+
+    missing_history_cols = validate_history_dataframe(history_df)
+    if missing_history_cols:
+        raise ValueError(f"History dataframe missing required columns: {missing_history_cols}")
+
+    tracker_name_str = _normalize_tracker_name(tracker_name)
+    if not tracker_name_str:
+        raise ValueError("A Tracker name must be provided for restore operations.")
+
+    parsed_restore_ts = _parse_timestamp(restore_to)
+    if parsed_restore_ts is None:
+        raise ValueError("Unable to parse restore timestamp. Please provide a valid date/time.")
+
+    history_df['__parsed_modify_date'] = history_df['Modify Date'].apply(_parse_timestamp)
+    history_df['Tracker'] = history_df['Tracker'].apply(_normalize_tracker_name)
+
+    change_rows = history_df[
+        (history_df['Tracker'] == tracker_name_str) &
+        (history_df['__parsed_modify_date'] == parsed_restore_ts)
+    ]
+
+    changes: List[Dict[str, Any]] = []
+    for _, row in change_rows.iterrows():
+        changes.append({
+            'field': _get_field_name(row) or 'Unknown field',
+            'old_value': row.get('Old Value'),
+            'new_value': row.get('New Value'),
+            'modified_by': row.get('Modified By') or row.get('Last Modified By Name'),
+            'recorded_at': row.get('__parsed_modify_date') or row.get('Modify Date'),
+        })
+
+    return changes
+
+
 def build_history_state_options(history_df: pd.DataFrame, tracker_name: str) -> List[HistoryStateOption]:
     history_df = history_df.copy()
 
@@ -108,16 +164,25 @@ def build_history_state_options(history_df: pd.DataFrame, tracker_name: str) -> 
     options: List[HistoryStateOption] = []
     for modify_ts, group in grouped:
         fields_changed: List[str] = []
+        changes: List[Dict[str, Any]] = []
         for _, row in group.iterrows():
             field_name = _get_field_name(row) or 'Unknown field'
             if field_name not in fields_changed:
                 fields_changed.append(field_name)
+            changes.append({
+                'field': field_name,
+                'old_value': row.get('Old Value'),
+                'new_value': row.get('New Value'),
+                'modified_by': row.get('Modified By') or row.get('Last Modified By Name'),
+                'recorded_at': row.get('__parsed_modify_date') or row.get('Modify Date'),
+            })
         options.append(
             HistoryStateOption(
                 tracker_name=tracker_name_str,
                 tracker_id=_normalize_tracker_name(group['id Tracker'].iloc[0]),
                 restore_to=modify_ts,
                 fields_changed=fields_changed,
+                changes=changes,
                 history_row_indices=list(group.index),
             )
         )
