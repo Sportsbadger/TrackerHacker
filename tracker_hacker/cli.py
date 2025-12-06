@@ -19,6 +19,42 @@ from tracker_hacker.modifications import identify_modifications, load_swap_pairs
 from tracker_hacker.utils import handle_cancel
 
 
+def _summarize_history_changes(changes):
+    def _is_empty(value):
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        try:
+            return pd.isna(value)
+        except Exception:
+            return False
+
+    categories = {"filters": [], "fields": []}
+    for change in changes:
+        field_name = change.get("field", "Unknown field")
+        old_val = change.get("old_value")
+        new_val = change.get("new_value")
+
+        is_added = _is_empty(old_val) and not _is_empty(new_val)
+        is_removed = not _is_empty(old_val) and _is_empty(new_val)
+        action = "updated"
+        if is_added:
+            action = "added"
+        elif is_removed:
+            action = "removed"
+
+        category_key = "filters" if "filter" in str(field_name).lower() else "fields"
+        categories[category_key].append(f"{field_name} ({action})")
+
+    summary_parts = [f"There were {len(changes)} change(s)"]
+    for label, items in categories.items():
+        if items:
+            summary_parts.append(f"{label.capitalize()}: {', '.join(items)}")
+
+    return " – ".join(summary_parts) if changes else "No change details recorded"
+
+
 def main_loop():
     script_dir = Path(__file__).resolve().parent.parent
     output_dir = script_dir / 'outputs'
@@ -301,11 +337,7 @@ def main_loop():
                                             else:
                                                 state_choices = []
                                                 for opt in history_state_options:
-                                                    change_descriptions = [
-                                                        f"{chg['field']}: {chg.get('old_value')} -> {chg.get('new_value')}"
-                                                        for chg in opt.changes
-                                                    ]
-                                                    change_summary = "; ".join(change_descriptions) if change_descriptions else "No change details recorded"
+                                                    change_summary = _summarize_history_changes(opt.changes)
                                                     state_choices.append(
                                                         Choice(
                                                             title=f"{opt.restore_to} – {change_summary}",
