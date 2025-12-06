@@ -274,18 +274,18 @@ def main_loop():
                                 print(f"Failed to load history CSV '{selected_history_csv}': {exc}")
                                 operation_flow_control = "return_to_menu"
                             else:
-                                tracker_id_choices = sorted(state.main_df['Tracker Name Id'].dropna().astype(str).unique())
-                                tracker_id_default = tracker_id_choices[0] if tracker_id_choices else ""
-                                tracker_id_selected = questionary.autocomplete(
-                                    "Tracker Name Id to restore:",
-                                    choices=tracker_id_choices,
-                                    default=tracker_id_default
+                                tracker_name_choices = sorted(state.main_df['Tracker'].dropna().astype(str).unique())
+                                tracker_name_default = tracker_name_choices[0] if tracker_name_choices else ""
+                                tracker_name_selected = questionary.autocomplete(
+                                    "Tracker to restore:",
+                                    choices=tracker_name_choices,
+                                    default=tracker_name_default
                                 ).ask()
-                                if tracker_id_selected is None:
+                                if tracker_name_selected is None:
                                     operation_flow_control = handle_cancel("Tracker selection cancelled.", return_to_menu=True)
                                 else:
                                     try:
-                                        history_state_options = build_history_state_options(history_df, tracker_id_selected)
+                                        history_state_options = build_history_state_options(history_df, tracker_name_selected)
                                     except ValueError as exc:
                                         print(f"Restore failed: {exc}")
                                         operation_flow_control = "return_to_menu"
@@ -313,14 +313,14 @@ def main_loop():
                                                     restore_result = restore_tracker_state(
                                                         state.main_df,
                                                         history_df,
-                                                        tracker_id_selected,
+                                                        tracker_name_selected,
                                                         chosen_state_ts
                                                     )
                                                 except ValueError as exc:
                                                     print(f"Restore failed: {exc}")
                                                     operation_flow_control = "return_to_menu"
                                                 else:
-                                                    print(f"\nRestored tracker '{restore_result.tracker_id}' back to {restore_result.restore_to}.")
+                                                    print(f"\nRestored tracker '{restore_result.tracker_name}' back to {restore_result.restore_to}.")
                                                     if restore_result.applied_changes:
                                                         print("Applied changes:")
                                                         for change in restore_result.applied_changes:
@@ -346,7 +346,7 @@ def main_loop():
                                                             "Replace in-memory tracker row with restored values?", default=False
                                                         ).ask()
                                                         if replace_in_memory:
-                                                            selector = state.main_df['Tracker Name Id'].astype(str) == restore_result.tracker_id
+                                                            selector = state.main_df['Tracker'].astype(str) == restore_result.tracker_name
                                                             state.main_df.loc[selector, restore_result.restored_row.index] = restore_result.restored_row.values
                                                             print("In-memory tracker updated with restored snapshot.")
 
@@ -361,7 +361,7 @@ def main_loop():
                                                             report_paths = write_restore_report(
                                                                 restore_result,
                                                                 output_dir,
-                                                                filename_prefix=f"restore_{restore_result.tracker_id}_{ts_restore}"
+                                                                filename_prefix=f"restore_{restore_result.tracker_name}_{ts_restore}"
                                                             )
                                                             print(f"Summary saved to {report_paths['summary']}")
                                                             print(f"Restored row saved to {report_paths['restored_row']}")

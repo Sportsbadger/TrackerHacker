@@ -93,8 +93,8 @@ Helper utilities used across the toolkit:
 
 #### Restoring a tracker from a history CSV via the CLI
 1. Choose **Restore Tracker from History** in the main menu.
-2. Select a tracker history CSV (must include columns like `Tracker Name Id`, `Modify Date`, `Field`/`API Field`, `Old Value`, `New Value`).
-3. Pick the `Tracker Name Id` to restore and enter the target "Modify Date" timestamp to roll back to.
+2. Select a tracker history CSV (must include columns like `Tracker`, `id Tracker`, `Modify Date`, `Field`/`API Field`, `Old Value`, `New Value`).
+3. Pick the **Tracker** (plain English name) to restore and enter the target "Modify Date" timestamp to roll back to.
 4. Optionally replace the in-memory tracker row and save a summary plus restored-row CSV under `outputs/`.
 
 ## Outputs
