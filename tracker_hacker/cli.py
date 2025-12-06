@@ -30,39 +30,58 @@ def _summarize_history_changes(changes):
         except Exception:
             return False
 
-    buckets = {
-        "filters": {"added": set(), "removed": set(), "updated": set()},
-        "fields": {"added": set(), "removed": set(), "updated": set()}
-    }
+    def _clean_string(value):
+        if value is None:
+            return ""
+        return str(value).strip()
 
+    def _window_excerpt(text, center_start, center_end, context=25, max_len=120):
+        """Return a short excerpt around the changed region."""
+        start = max(center_start - context, 0)
+        end = min(center_end + context, len(text))
+        excerpt = text[start:end]
+        if len(excerpt) > max_len:
+            excerpt = excerpt[: max_len // 2 - 2] + " … " + excerpt[-max_len // 2 + 2 :]
+        prefix = "…" if start > 0 else ""
+        suffix = "…" if end < len(text) else ""
+        return f"{prefix}{excerpt}{suffix}" if excerpt else "(empty)"
+
+    def _describe_change(old_val, new_val):
+        old_str = _clean_string(old_val)
+        new_str = _clean_string(new_val)
+
+        if _is_empty(old_val) and not _is_empty(new_val):
+            return f"set to '{_window_excerpt(new_str, 0, len(new_str))}'"
+        if not _is_empty(old_val) and _is_empty(new_val):
+            return f"cleared from '{_window_excerpt(old_str, 0, len(old_str))}'"
+
+        if old_str == new_str:
+            return "no change recorded"
+
+        from difflib import SequenceMatcher
+
+        matcher = SequenceMatcher(None, old_str, new_str)
+        diff_chunks = [op for op in matcher.get_opcodes() if op[0] != "equal"]
+        if not diff_chunks:
+            return f"changed to '{_window_excerpt(new_str, 0, len(new_str))}'"
+
+        # Focus on the first differing span.
+        tag, i1, i2, j1, j2 = diff_chunks[0]
+        old_excerpt = _window_excerpt(old_str, i1, i2)
+        new_excerpt = _window_excerpt(new_str, j1, j2)
+        change_label = {"replace": "updated", "delete": "removed", "insert": "added"}.get(tag, "changed")
+        return f"{change_label}: '{old_excerpt}' -> '{new_excerpt}'"
+
+    if not changes:
+        return "No change details recorded"
+
+    summarized_changes = []
     for change in changes:
         field_name = str(change.get("field", "Unknown field")).strip() or "Unknown field"
-        old_val = change.get("old_value")
-        new_val = change.get("new_value")
+        description = _describe_change(change.get("old_value"), change.get("new_value"))
+        summarized_changes.append(f"{field_name}: {description}")
 
-        is_added = _is_empty(old_val) and not _is_empty(new_val)
-        is_removed = not _is_empty(old_val) and _is_empty(new_val)
-        action = "updated"
-        if is_added:
-            action = "added"
-        elif is_removed:
-            action = "removed"
-
-        category_key = "filters" if "filter" in field_name.lower() else "fields"
-        buckets[category_key][action].add(field_name)
-
-    summary_parts = []
-    for category, actions in buckets.items():
-        action_summaries = []
-        for action_label in ("added", "removed", "updated"):
-            if actions[action_label]:
-                action_summaries.append(
-                    f"{action_label.capitalize()}: {', '.join(sorted(actions[action_label]))}"
-                )
-        if action_summaries:
-            summary_parts.append(f"{category.capitalize()}: {'; '.join(action_summaries)}")
-
-    return " – ".join(summary_parts) if summary_parts else "No change details recorded"
+    return " | ".join(summarized_changes)
 
 
 def main_loop():
