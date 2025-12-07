@@ -134,12 +134,7 @@ def test_expanded_field_changes_show_details_when_tokens_missing():
     ]
 
     summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
-    lines = summary.splitlines()
-
-    assert "values changed (expand to view details)" not in summary
-    assert lines[0].startswith("- Fields:")
-    assert "alpha__c" in summary and "beta__c" in summary
-    assert "->" not in summary
+    assert summary == "No change details recorded"
 
 
 def test_duplicate_field_change_messages_collapsed():
@@ -163,11 +158,7 @@ def test_expanded_query_changes_show_tokens_without_snippets():
     ]
 
     summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
-    lines = summary.splitlines()
-
-    assert lines[0].startswith("- Query:")
-    assert "one__c" in summary and "two__c" in summary
-    assert "Open" not in summary and "Closed" not in summary
+    assert summary == "No change details recorded"
 
 
 def test_expanded_summary_inserts_spacing_between_entries():
@@ -194,6 +185,28 @@ def test_expanded_summary_omits_non_field_details_when_present():
 
     assert "Logic:" not in summary
     assert summary.startswith("- Fields added: alpha__c")
+
+
+def test_expanded_summary_surfaces_added_and_removed_tokens():
+    changes = [
+        {
+            "field": "Fields",
+            "old_value": "alpha__c, beta__c",
+            "new_value": "beta__c, gamma__c",
+        },
+        {
+            "field": "Query",
+            "old_value": "SELECT alpha__c FROM Obj",
+            "new_value": "SELECT beta__c, gamma__c FROM Obj",
+        },
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+
+    assert "Fields added: gamma__c" in summary
+    assert "Fields removed: alpha__c" in summary
+    assert "Query added: beta__c, gamma__c" in summary
+    assert "Query removed: alpha__c" in summary
 
 
 def test_choice_titles_align_after_hyphen(monkeypatch):

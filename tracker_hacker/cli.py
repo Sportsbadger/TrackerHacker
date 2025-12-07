@@ -164,10 +164,12 @@ def _summarize_history_changes(
             if removed_tokens:
                 _append_unique(contextual_field_changes, _format_tokens(removed_tokens, "removed"))
 
-            no_token_diff = not added_tokens and not removed_tokens and not (
-                _is_empty(old_val) and _is_empty(new_val)
-            )
-            if not no_token_diff:
+            if added_tokens or removed_tokens:
+                continue
+
+            no_token_diff = not (_is_empty(old_val) and _is_empty(new_val))
+
+            if expanded:
                 continue
 
             display_tokens = list(
