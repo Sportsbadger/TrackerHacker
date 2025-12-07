@@ -170,6 +170,20 @@ def test_expanded_query_changes_show_tokens_without_snippets():
     assert "Open" not in summary and "Closed" not in summary
 
 
+def test_expanded_summary_inserts_spacing_between_entries():
+    changes = [
+        {"field": "Fields", "old_value": "", "new_value": "alpha__c"},
+        {"field": "Query", "old_value": "SELECT alpha__c FROM Obj", "new_value": "SELECT beta__c FROM Obj"},
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+
+    entries = summary.split("\n\n")
+
+    assert any(line.startswith("- Fields added") for line in entries[0].splitlines())
+    assert any(line.startswith("- Query added") for line in entries[1].splitlines())
+
+
 def test_choice_titles_align_after_hyphen(monkeypatch):
     from tracker_hacker import cli
 
@@ -194,4 +208,5 @@ def test_choice_titles_align_after_hyphen(monkeypatch):
     prefix = f"{option.restore_to} - "
     expected_indent = " " * (len(prefix) + cli.CHOICE_POINTER_PADDING)
     assert lines[0].startswith(prefix)
+    assert "- -" not in lines[0]
     assert lines[1].startswith(expected_indent)

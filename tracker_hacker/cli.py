@@ -38,6 +38,7 @@ def _summarize_history_changes(
     expanded: bool = False,
     wrap_width: int | None = None,
     wrap: bool = True,
+    bullet_prefix: bool = True,
 ):
     def _is_empty(value):
         if value is None:
@@ -237,8 +238,10 @@ def _summarize_history_changes(
             subsequent_indent="  ",
         )
 
-    formatted_lines = [f"- {_wrap_line(line)}" for line in summary_lines if line]
-    return "\n".join(formatted_lines)
+    line_prefix = "- " if bullet_prefix else ""
+    separator = "\n\n" if expanded else "\n"
+    formatted_lines = [f"{line_prefix}{_wrap_line(line)}" for line in summary_lines if line]
+    return separator.join(formatted_lines)
 
 
 CHOICE_POINTER_PADDING = 3
@@ -249,7 +252,12 @@ def _format_history_choice_title(option):
     prefix = f"{restore_label} - "
     pointer_adjusted_width = shutil.get_terminal_size(fallback=(120, 20)).columns - CHOICE_POINTER_PADDING
     wrap_width = max(40, pointer_adjusted_width)
-    summary = _summarize_history_changes(option.changes, wrap_width=wrap_width, wrap=False)
+    summary = _summarize_history_changes(
+        option.changes,
+        wrap_width=wrap_width,
+        wrap=False,
+        bullet_prefix=False,
+    )
 
     from textwrap import wrap
 
@@ -627,7 +635,7 @@ def main_loop():
 
                                                     operation_flow_control, chosen_state_option = _prompt_restore_state_selection(state_choices)
                                                     if operation_flow_control == "return_to_menu":
-                                                        break
+                                                        continue
 
                                                     try:
                                                         restore_result = restore_tracker_state(
