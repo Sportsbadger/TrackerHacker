@@ -182,7 +182,7 @@ def get_history_changes_for_timestamp(history_df: pd.DataFrame, tracker_name: st
             continue
 
         field_name_lower = str(field_name).strip().lower()
-        if field_name_lower == "fields" and _is_reorder_only(
+        if field_name_lower in {"fields", "query"} and _is_reorder_only(
             row.get('Old Value'), row.get('New Value')
         ):
             continue
@@ -229,7 +229,7 @@ def build_history_state_options(history_df: pd.DataFrame, tracker_name: str) -> 
     tracker_history = tracker_history[~tracker_history['__field_name'].apply(_is_ignored_field)].copy()
     tracker_history['__is_reorder_only'] = tracker_history.apply(
         lambda row: _is_reorder_only(row.get('Old Value'), row.get('New Value'))
-        if str(row.get('__field_name', '')).strip().lower() == "fields"
+        if str(row.get('__field_name', '')).strip().lower() in {"fields", "query"}
         else False,
         axis=1,
     )

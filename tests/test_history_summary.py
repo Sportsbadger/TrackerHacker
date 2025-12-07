@@ -162,7 +162,7 @@ def test_expanded_query_changes_show_tokens_without_snippets():
     ]
 
     summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
-    assert summary.startswith("- Query: SELECT, one__c, two__c, FROM, Obj, WHERE, Status")
+    assert summary == "No change details recorded"
 
 
 def test_expanded_summary_inserts_spacing_between_entries():
@@ -227,20 +227,6 @@ def test_reordered_field_list_is_ignored_in_collapsed_summary():
     assert summary == "No change details recorded"
 
 
-def test_reordered_query_list_is_included_in_summary():
-    changes = [
-        {
-            "field": "Query",
-            "old_value": "SELECT alpha__c, beta__c FROM Obj",
-            "new_value": "SELECT beta__c, alpha__c FROM Obj",
-        }
-    ]
-
-    summary = _strip_colors(_summarize_history_changes(changes))
-
-    assert "Query: values changed" in summary
-
-
 def test_history_state_options_drop_reorder_and_resize_map():
     import pandas as pd
 
@@ -280,31 +266,6 @@ def test_history_state_options_drop_reorder_and_resize_map():
 
     assert len(options) == 1
     assert options[0].fields_changed == ["Fields"]
-
-
-def test_history_state_options_keep_query_reorder():
-    import pandas as pd
-
-    try:
-        history_df = pd.DataFrame(
-            [
-                {
-                    "Tracker": "Test Tracker",
-                    "id Tracker": "1",
-                    "Modify Date": "2024-07-03",
-                    "Field": "Query",
-                    "Old Value": "SELECT alpha__c, beta__c FROM Obj",
-                    "New Value": "SELECT beta__c, alpha__c FROM Obj",
-                }
-            ]
-        )
-    except TypeError:
-        pytest.skip("pandas stubbed; real DataFrame required")
-
-    options = build_history_state_options(history_df, "Test Tracker")
-
-    assert len(options) == 1
-    assert options[0].fields_changed == ["Query"]
 
 
 def test_choice_titles_align_after_hyphen(monkeypatch):

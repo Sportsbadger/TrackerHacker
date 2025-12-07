@@ -176,10 +176,10 @@ def _summarize_history_changes(
                 and old_tokens != new_tokens
             )
 
-            if field_name_lower == "fields" and tokens_reordered:
+            if tokens_reordered:
                 continue
 
-            if expanded and field_name_lower == "fields":
+            if expanded:
                 continue
 
             display_tokens = list(
