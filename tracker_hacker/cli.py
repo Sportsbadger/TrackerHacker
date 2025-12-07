@@ -88,12 +88,12 @@ def _summarize_history_changes(
 
         return unique_tokens
 
-    def _diff_field_tokens(old_val: object, new_val: object) -> tuple[list[str], list[str], list[str], list[str]]:
+    def _diff_field_tokens(old_val: object, new_val: object) -> tuple[list[str], list[str]]:
         old_tokens = _extract_field_tokens(old_val)
         new_tokens = _extract_field_tokens(new_val)
         added = [tok for tok in new_tokens if tok not in old_tokens]
         removed = [tok for tok in old_tokens if tok not in new_tokens]
-        return added, removed, old_tokens, new_tokens
+        return added, removed
 
     def _window_excerpt(text, center_start, center_end, context=25, max_len=120):
         """Return a short excerpt around the changed region."""
@@ -151,9 +151,7 @@ def _summarize_history_changes(
 
         field_name_lower = field_name.lower()
         if field_name_lower in {"fields", "query"}:
-            added_tokens, removed_tokens, old_tokens, new_tokens = _diff_field_tokens(
-                old_val, new_val
-            )
+            added_tokens, removed_tokens = _diff_field_tokens(old_val, new_val)
 
             def _format_tokens(tokens: list[str], action: str) -> str:
                 if expanded or len(tokens) <= collapse_threshold:
@@ -169,15 +167,7 @@ def _summarize_history_changes(
             if added_tokens or removed_tokens:
                 continue
 
-            tokens_reordered = (
-                bool(old_tokens)
-                and bool(new_tokens)
-                and set(old_tokens) == set(new_tokens)
-                and old_tokens != new_tokens
-            )
-
-            if tokens_reordered:
-                continue
+            no_token_diff = not (_is_empty(old_val) and _is_empty(new_val))
 
             if expanded:
                 continue
