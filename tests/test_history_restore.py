@@ -20,9 +20,17 @@ def test_resize_map_rows_are_excluded_from_state_options():
                 "Tracker": "Example",
                 "id Tracker": "1",
                 "Modify Date": "01/12/2023",
-                "Field": "Resize Map",
+                "Field": "ResizeMap",
                 "Old Value": "old",
                 "New Value": "new",
+            },
+            {
+                "Tracker": "Example",
+                "id Tracker": "1",
+                "Modify Date": "01/12/2023",
+                "Field": "Label Map",
+                "Old Value": "label old",
+                "New Value": "label new",
             },
             {
                 "Tracker": "Example",
@@ -40,3 +48,41 @@ def test_resize_map_rows_are_excluded_from_state_options():
     assert len(options) == 1
     assert options[0].fields_changed == ["Status"]
     assert all(change["field"] == "Status" for change in options[0].changes)
+
+
+def test_resize_map_only_state_is_hidden():
+    history_df = pd.DataFrame(
+        [
+            {
+                "Tracker": "Example",
+                "id Tracker": "1",
+                "Modify Date": "02/12/2023 09:00",
+                "Field": "ResizeMap",
+                "Old Value": "old",
+                "New Value": "new",
+            }
+        ]
+    )
+
+    options = build_history_state_options(history_df, "Example")
+
+    assert options == []
+
+
+def test_label_map_only_state_is_hidden():
+    history_df = pd.DataFrame(
+        [
+            {
+                "Tracker": "Example",
+                "id Tracker": "1",
+                "Modify Date": "03/12/2023 09:00",
+                "Field": "Label Map",
+                "Old Value": "old label",
+                "New Value": "new label",
+            }
+        ]
+    )
+
+    options = build_history_state_options(history_df, "Example")
+
+    assert options == []
