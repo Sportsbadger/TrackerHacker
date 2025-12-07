@@ -4,6 +4,7 @@ import warnings
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from textwrap import indent
 
 import pandas as pd
 import questionary
@@ -177,6 +178,20 @@ def _summarize_history_changes(
     adjusted_width = max(40, terminal_width)
     summary = " | ".join(summary_parts)
     return fill(summary, width=adjusted_width, break_long_words=False, break_on_hyphens=False)
+
+
+def _format_history_choice_title(option):
+    restore_label = str(option.restore_to)
+    prefix = f"{restore_label} - "
+    wrap_width = max(40, shutil.get_terminal_size(fallback=(120, 20)).columns - len(prefix))
+    summary = _summarize_history_changes(option.changes, wrap_width=wrap_width)
+
+    if "\n" not in summary:
+        return f"{prefix}{summary}"
+
+    summary_lines = summary.splitlines()
+    padded_tail = indent("\n".join(summary_lines[1:]), " " * len(prefix))
+    return f"{prefix}{summary_lines[0]}\n{padded_tail}"
 
 
 def main_loop():
@@ -462,21 +477,25 @@ def main_loop():
                                                 else:
                                                     state_choices = []
                                                     for opt in history_state_options:
-                                                        change_summary = _summarize_history_changes(opt.changes)
+                                                        formatted_title = _format_history_choice_title(opt)
                                                         state_choices.append(
-                                                            Choice(
-                                                                title=f"{opt.restore_to} – {change_summary}",
-                                                                value=opt
-                                                            )
+                                                            Choice(title=formatted_title, value=opt)
                                                         )
                                                     state_choices.insert(0, Choice(title="<Cancel>", value=None))
-                                                    chosen_state_option = questionary.select(
-                                                        "Select restore state (grouped by Modify Date):",
-                                                        choices=state_choices
-                                                    ).ask()
-                                                    if chosen_state_option is None:
-                                                        operation_flow_control = handle_cancel("Restore state selection cancelled.", return_to_menu=True)
-                                                    else:
+
+                                                    while True:
+                                                        chosen_state_option = questionary.select(
+                                                            "Select restore state (grouped by Modify Date):",
+                                                            choices=state_choices
+                                                        ).ask()
+                                                        if chosen_state_option is None:
+                                                            operation_flow_control = handle_cancel(
+                                                                "Restore state selection cancelled.", return_to_menu=True
+                                                            )
+                                                            break
+                                                        if not hasattr(chosen_state_option, "changes"):
+                                                            print("Invalid selection. Please choose a restore option.")
+                                                            continue
                                                         try:
                                                             show_detail = questionary.confirm(
                                                                 "Show detailed change list?",
@@ -486,7 +505,7 @@ def main_loop():
                                                             operation_flow_control = handle_cancel(
                                                                 "Detailed change prompt interrupted.", return_to_menu=True
                                                             )
-                                                            continue
+                                                            break
                                                         if show_detail:
                                                             detailed_summary = _summarize_history_changes(
                                                                 chosen_state_option.changes,
@@ -498,7 +517,25 @@ def main_loop():
                                                             operation_flow_control = handle_cancel(
                                                                 "Detailed change prompt cancelled.", return_to_menu=True
                                                             )
+                                                            break
+
+                                                        apply_choice = questionary.select(
+                                                            "Apply this restore state?",
+                                                            choices=[
+                                                                Choice("Apply restore", "apply"),
+                                                                Choice("Back to history selection", "reselect"),
+                                                                Choice("<Cancel>", "cancel"),
+                                                            ]
+                                                        ).ask()
+
+                                                        if apply_choice in {None, "cancel"}:
+                                                            operation_flow_control = handle_cancel(
+                                                                "Restore operation cancelled.", return_to_menu=True
+                                                            )
+                                                            break
+                                                        if apply_choice == "reselect":
                                                             continue
+
                                                         try:
                                                             restore_result = restore_tracker_state(
                                                                 state.main_df,
@@ -524,6 +561,7 @@ def main_loop():
                                                                 f" Summary: {report_paths['summary']} | Restored row: {report_paths['restored_row']}"
                                                             )
                                                             operation_flow_control = "return_to_menu"
+                                                        break
                 except KeyboardInterrupt:
                     operation_flow_control = handle_cancel("Restore setup interrupted.", return_to_menu=True)
             elif chosen_action == "audit":
