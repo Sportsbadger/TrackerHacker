@@ -57,12 +57,29 @@ def _summarize_history_changes(
         raw = _clean_string(value)
         if not raw:
             return []
-        tokens = re.findall(r"[A-Za-z0-9_]+(?:__[cr])?(?:\.[A-Za-z0-9_]+(?:__[cr])?)*", raw)
+
+        normalized = raw.replace('[', '').replace(']', '')
+        tokens = re.findall(r"[A-Za-z0-9_]+(?:__[cr])?(?:\.[A-Za-z0-9_]+(?:__[cr])?)*", normalized)
         unique_tokens: list[str] = []
-        for token in tokens:
-            cleaned = token.strip().strip(',')
+
+        def _add_unique(token: str) -> None:
+            cleaned = token.strip().strip(',').strip('"\'')
             if cleaned and cleaned not in unique_tokens:
                 unique_tokens.append(cleaned)
+
+        for token in tokens:
+            _add_unique(token)
+
+        if unique_tokens:
+            return unique_tokens
+
+        # Fallback: split on common delimiters to capture bracketed or unconventional field names.
+        for segment in re.split(r"[\s,;|\n]+", normalized):
+            if not segment:
+                continue
+            if re.fullmatch(r"[A-Za-z0-9_\.]+(?:__[cr])?", segment):
+                _add_unique(segment)
+
         return unique_tokens
 
     def _diff_field_tokens(old_val: object, new_val: object) -> tuple[list[str], list[str]]:
@@ -137,8 +154,7 @@ def _summarize_history_changes(
             if removed_tokens:
                 contextual_field_changes.append(_format_tokens(removed_tokens, "removed"))
             if not added_tokens and not removed_tokens and not (_is_empty(old_val) and _is_empty(new_val)):
-                description = _describe_change(old_val, new_val)
-                other_changes.append(f"{field_name}: {description}")
+                other_changes.append(f"{field_name}: values changed (expand to view details)")
             continue
 
         if _is_empty(old_val) and not _is_empty(new_val):

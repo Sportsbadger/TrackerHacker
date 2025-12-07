@@ -104,3 +104,19 @@ def test_long_field_lists_collapse_until_expanded():
 
     expanded = _strip_colors(_summarize_history_changes(changes, expanded=True))
     assert "field_0__c" in expanded and "field_6__c" in expanded
+
+
+def test_query_tokens_parsed_with_brackets():
+    changes = [
+        {
+            "field": "Query",
+            "old_value": "SELECT [old_field__c] FROM Obj",
+            "new_value": "SELECT [new_field__c], [shared__c] FROM Obj",
+        }
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes))
+
+    assert "Query added: new_field__c" in summary
+    assert "Query removed: old_field__c" in summary
+    assert "SELECT [old_field__c]" not in summary
