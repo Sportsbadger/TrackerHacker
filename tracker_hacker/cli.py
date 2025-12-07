@@ -38,6 +38,7 @@ def _summarize_history_changes(
     expanded: bool = False,
     wrap_width: int | None = None,
     wrap: bool = True,
+    bullet_prefix: bool = True,
 ):
     def _is_empty(value):
         if value is None:
@@ -163,10 +164,12 @@ def _summarize_history_changes(
             if removed_tokens:
                 _append_unique(contextual_field_changes, _format_tokens(removed_tokens, "removed"))
 
-            no_token_diff = not added_tokens and not removed_tokens and not (
-                _is_empty(old_val) and _is_empty(new_val)
-            )
-            if not no_token_diff:
+            if added_tokens or removed_tokens:
+                continue
+
+            no_token_diff = not (_is_empty(old_val) and _is_empty(new_val))
+
+            if expanded:
                 continue
 
             display_tokens = list(
@@ -203,7 +206,7 @@ def _summarize_history_changes(
         description = _describe_change(old_val, new_val)
         other_changes.append(f"{field_name}: {description}")
 
-    summary_parts = []
+    summary_lines = []
 
     def _format_field_list(items: list[str], label: str) -> str:
         unique_items = list(dict.fromkeys(items))
@@ -213,26 +216,41 @@ def _summarize_history_changes(
         return f"{label}: {len(unique_items)} {plural} (expand to view)"
 
     if added_fields:
-        summary_parts.append(_format_field_list(added_fields, "Fields added"))
+        summary_lines.append(_format_field_list(added_fields, "Fields added"))
     if removed_fields:
-        summary_parts.append(_format_field_list(removed_fields, "Fields removed"))
+        summary_lines.append(_format_field_list(removed_fields, "Fields removed"))
+    summary_lines.extend(contextual_field_changes)
+    summary_lines.extend(other_changes)
 
-    for contextual_entry in contextual_field_changes:
-        summary_parts.append(contextual_entry)
-    summary_parts.extend(other_changes)
+    if expanded:
+        field_focus = [
+            line for line in summary_lines if line.lower().startswith(("fields", "query"))
+        ]
+        if field_focus:
+            summary_lines = field_focus
 
-    if not summary_parts:
+    if not summary_lines:
         return "No change details recorded"
 
-    summary = " | ".join(summary_parts)
-    if not wrap:
-        return summary
+    def _wrap_line(text: str) -> str:
+        if not wrap:
+            return text
+        from textwrap import fill
 
-    from textwrap import fill
+        terminal_width = wrap_width or shutil.get_terminal_size(fallback=(120, 20)).columns
+        adjusted_width = max(40, terminal_width)
+        return fill(
+            text,
+            width=adjusted_width,
+            break_long_words=False,
+            break_on_hyphens=False,
+            subsequent_indent="  ",
+        )
 
-    terminal_width = wrap_width or shutil.get_terminal_size(fallback=(120, 20)).columns
-    adjusted_width = max(40, terminal_width)
-    return fill(summary, width=adjusted_width, break_long_words=False, break_on_hyphens=False)
+    line_prefix = "- " if bullet_prefix else ""
+    separator = "\n\n" if expanded else "\n"
+    formatted_lines = [f"{line_prefix}{_wrap_line(line)}" for line in summary_lines if line]
+    return separator.join(formatted_lines)
 
 
 CHOICE_POINTER_PADDING = 3
@@ -243,7 +261,12 @@ def _format_history_choice_title(option):
     prefix = f"{restore_label} - "
     pointer_adjusted_width = shutil.get_terminal_size(fallback=(120, 20)).columns - CHOICE_POINTER_PADDING
     wrap_width = max(40, pointer_adjusted_width)
-    summary = _summarize_history_changes(option.changes, wrap_width=wrap_width, wrap=False)
+    summary = _summarize_history_changes(
+        option.changes,
+        wrap_width=wrap_width,
+        wrap=False,
+        bullet_prefix=False,
+    )
 
     from textwrap import wrap
 
@@ -621,7 +644,7 @@ def main_loop():
 
                                                     operation_flow_control, chosen_state_option = _prompt_restore_state_selection(state_choices)
                                                     if operation_flow_control == "return_to_menu":
-                                                        break
+                                                        continue
 
                                                     try:
                                                         restore_result = restore_tracker_state(

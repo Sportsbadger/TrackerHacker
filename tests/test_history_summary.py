@@ -56,11 +56,12 @@ def test_fields_and_query_changes_render_api_only():
 
     summary = _strip_colors(_summarize_history_changes(changes))
 
-    assert "Fields added: new_field__c" in summary
-    assert "Fields removed: " not in summary
-    assert "Query added: new_field__c" in summary
-    assert "Query removed: old_field__c" in summary
-    assert "shared__c" not in summary.split("|")[0]
+    lines = summary.splitlines()
+
+    assert any(line.startswith("- Fields added: new_field__c") for line in lines)
+    assert not any(line.startswith("- Fields removed:") for line in lines)
+    assert any(line.startswith("- Query added: new_field__c") for line in lines)
+    assert any(line.startswith("- Query removed: old_field__c") for line in lines)
 
 
 def test_other_changes_keep_descriptions():
@@ -133,11 +134,7 @@ def test_expanded_field_changes_show_details_when_tokens_missing():
     ]
 
     summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
-
-    assert "values changed (expand to view details)" not in summary
-    assert summary.startswith("Fields:")
-    assert "alpha__c" in summary and "beta__c" in summary
-    assert "->" not in summary
+    assert summary == "No change details recorded"
 
 
 def test_duplicate_field_change_messages_collapsed():
@@ -161,10 +158,55 @@ def test_expanded_query_changes_show_tokens_without_snippets():
     ]
 
     summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+    assert summary == "No change details recorded"
 
-    assert summary.startswith("Query:")
-    assert "one__c" in summary and "two__c" in summary
-    assert "Open" not in summary and "Closed" not in summary
+
+def test_expanded_summary_inserts_spacing_between_entries():
+    changes = [
+        {"field": "Fields", "old_value": "", "new_value": "alpha__c"},
+        {"field": "Query", "old_value": "SELECT alpha__c FROM Obj", "new_value": "SELECT beta__c FROM Obj"},
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+
+    entries = summary.split("\n\n")
+
+    assert any(line.startswith("- Fields added") for line in entries[0].splitlines())
+    assert any(line.startswith("- Query added") for line in entries[1].splitlines())
+
+
+def test_expanded_summary_omits_non_field_details_when_present():
+    changes = [
+        {"field": "Fields", "old_value": "", "new_value": "alpha__c"},
+        {"field": "Logic", "old_value": "1 AND 2", "new_value": "(1 AND 2) OR 3"},
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+
+    assert "Logic:" not in summary
+    assert summary.startswith("- Fields added: alpha__c")
+
+
+def test_expanded_summary_surfaces_added_and_removed_tokens():
+    changes = [
+        {
+            "field": "Fields",
+            "old_value": "alpha__c, beta__c",
+            "new_value": "beta__c, gamma__c",
+        },
+        {
+            "field": "Query",
+            "old_value": "SELECT alpha__c FROM Obj",
+            "new_value": "SELECT beta__c, gamma__c FROM Obj",
+        },
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+
+    assert "Fields added: gamma__c" in summary
+    assert "Fields removed: alpha__c" in summary
+    assert "Query added: beta__c, gamma__c" in summary
+    assert "Query removed: alpha__c" in summary
 
 
 def test_choice_titles_align_after_hyphen(monkeypatch):
@@ -191,4 +233,5 @@ def test_choice_titles_align_after_hyphen(monkeypatch):
     prefix = f"{option.restore_to} - "
     expected_indent = " " * (len(prefix) + cli.CHOICE_POINTER_PADDING)
     assert lines[0].startswith(prefix)
+    assert "- -" not in lines[0]
     assert lines[1].startswith(expected_indent)
