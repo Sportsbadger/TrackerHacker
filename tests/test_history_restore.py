@@ -28,6 +28,14 @@ def test_resize_map_rows_are_excluded_from_state_options():
                 "Tracker": "Example",
                 "id Tracker": "1",
                 "Modify Date": "01/12/2023",
+                "Field": "Label Map",
+                "Old Value": "label old",
+                "New Value": "label new",
+            },
+            {
+                "Tracker": "Example",
+                "id Tracker": "1",
+                "Modify Date": "01/12/2023",
                 "Field": "Status",
                 "Old Value": "Pending",
                 "New Value": "Approved",
@@ -52,6 +60,25 @@ def test_resize_map_only_state_is_hidden():
                 "Field": "ResizeMap",
                 "Old Value": "old",
                 "New Value": "new",
+            }
+        ]
+    )
+
+    options = build_history_state_options(history_df, "Example")
+
+    assert options == []
+
+
+def test_label_map_only_state_is_hidden():
+    history_df = pd.DataFrame(
+        [
+            {
+                "Tracker": "Example",
+                "id Tracker": "1",
+                "Modify Date": "03/12/2023 09:00",
+                "Field": "Label Map",
+                "Old Value": "old label",
+                "New Value": "new label",
             }
         ]
     )
