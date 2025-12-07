@@ -184,6 +184,18 @@ def test_expanded_summary_inserts_spacing_between_entries():
     assert any(line.startswith("- Query added") for line in entries[1].splitlines())
 
 
+def test_expanded_summary_omits_non_field_details_when_present():
+    changes = [
+        {"field": "Fields", "old_value": "", "new_value": "alpha__c"},
+        {"field": "Logic", "old_value": "1 AND 2", "new_value": "(1 AND 2) OR 3"},
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+
+    assert "Logic:" not in summary
+    assert summary.startswith("- Fields added: alpha__c")
+
+
 def test_choice_titles_align_after_hyphen(monkeypatch):
     from tracker_hacker import cli
 

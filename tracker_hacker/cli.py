@@ -220,6 +220,13 @@ def _summarize_history_changes(
     summary_lines.extend(contextual_field_changes)
     summary_lines.extend(other_changes)
 
+    if expanded:
+        field_focus = [
+            line for line in summary_lines if line.lower().startswith(("fields", "query"))
+        ]
+        if field_focus:
+            summary_lines = field_focus
+
     if not summary_lines:
         return "No change details recorded"
 
