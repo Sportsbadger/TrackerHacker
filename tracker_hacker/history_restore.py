@@ -43,7 +43,7 @@ def _parse_timestamp(dt_value: Any) -> Optional[pd.Timestamp]:
     if isinstance(dt_value, pd.Timestamp):
         return dt_value
     try:
-        ts = pd.to_datetime(dt_value, errors='coerce')
+        ts = pd.to_datetime(dt_value, errors='coerce', dayfirst=True)
         if pd.isna(ts):
             return None
         if isinstance(ts, pd.Timestamp) and ts.tzinfo:
@@ -61,10 +61,11 @@ def _get_field_name(row: pd.Series) -> Optional[str]:
     return None
 
 
-def _is_label_map_field(field_name: Optional[str]) -> bool:
+def _is_ignored_field(field_name: Optional[str]) -> bool:
     if field_name is None:
         return False
-    return str(field_name).strip().lower() == 'label map'
+    normalized = str(field_name).strip().lower()
+    return normalized in {"label map", "resize map"}
 
 
 def _format_value(val: Any) -> str:
@@ -135,7 +136,7 @@ def get_history_changes_for_timestamp(history_df: pd.DataFrame, tracker_name: st
     changes: List[Dict[str, Any]] = []
     for _, row in change_rows.iterrows():
         field_name = _get_field_name(row) or 'Unknown field'
-        if _is_label_map_field(field_name):
+        if _is_ignored_field(field_name):
             continue
 
         changes.append({
@@ -177,7 +178,7 @@ def build_history_state_options(history_df: pd.DataFrame, tracker_name: str) -> 
         return []
 
     tracker_history['__field_name'] = tracker_history.apply(_get_field_name, axis=1)
-    tracker_history = tracker_history[~tracker_history['__field_name'].apply(_is_label_map_field)].copy()
+    tracker_history = tracker_history[~tracker_history['__field_name'].apply(_is_ignored_field)].copy()
 
     if tracker_history.empty:
         return []
@@ -253,13 +254,13 @@ def restore_tracker_state(current_df: pd.DataFrame, history_df: pd.DataFrame, tr
     history_df['__parsed_modify_date'] = history_df['Modify Date'].apply(_parse_timestamp)
     history_df['Tracker'] = history_df['Tracker'].apply(_normalize_tracker_name)
     history_df['__field_name'] = history_df.apply(_get_field_name, axis=1)
-    history_df['__is_label_map'] = history_df['__field_name'].apply(_is_label_map_field)
+    history_df['__is_ignored_field'] = history_df['__field_name'].apply(_is_ignored_field)
 
     relevant_history = history_df[
         (history_df['Tracker'] == tracker_name_str) &
         history_df['__parsed_modify_date'].notna() &
         (history_df['__parsed_modify_date'] >= parsed_restore_ts) &
-        (~history_df['__is_label_map'])
+        (~history_df['__is_ignored_field'])
     ].sort_values('__parsed_modify_date', ascending=False)
 
     applied_changes: List[Dict[str, Any]] = []

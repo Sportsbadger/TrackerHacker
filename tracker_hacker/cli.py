@@ -104,10 +104,6 @@ def _summarize_history_changes(changes):
     if not changes:
         return "No change details recorded"
 
-    add_color = "\033[96m"  # cyan/blue
-    remove_color = "\033[91m"  # red
-    reset_color = "\033[0m"
-
     added_fields = []
     removed_fields = []
     other_changes = []
@@ -123,11 +119,11 @@ def _summarize_history_changes(changes):
             added_tokens, removed_tokens = _diff_field_tokens(old_val, new_val)
             if added_tokens:
                 contextual_field_changes.append(
-                    f"{add_color}{field_name} added: {', '.join(added_tokens)}{reset_color}"
+                    f"{field_name} added: {', '.join(added_tokens)}"
                 )
             if removed_tokens:
                 contextual_field_changes.append(
-                    f"{remove_color}{field_name} removed: {', '.join(removed_tokens)}{reset_color}"
+                    f"{field_name} removed: {', '.join(removed_tokens)}"
                 )
             if not added_tokens and not removed_tokens and not (_is_empty(old_val) and _is_empty(new_val)):
                 description = _describe_change(old_val, new_val)
@@ -148,18 +144,20 @@ def _summarize_history_changes(changes):
 
     if added_fields:
         unique_added = list(dict.fromkeys(added_fields))
-        summary_parts.append(
-            f"{add_color}Fields added: {', '.join(unique_added)}{reset_color}"
-        )
+        summary_parts.append(f"Fields added: {', '.join(unique_added)}")
     if removed_fields:
         unique_removed = list(dict.fromkeys(removed_fields))
-        summary_parts.append(
-            f"{remove_color}Fields removed: {', '.join(unique_removed)}{reset_color}"
-        )
+        summary_parts.append(f"Fields removed: {', '.join(unique_removed)}")
     summary_parts.extend(contextual_field_changes)
     summary_parts.extend(other_changes)
 
-    return " | ".join(summary_parts)
+    if not summary_parts:
+        return "No change details recorded"
+
+    from textwrap import fill
+
+    summary = " | ".join(summary_parts)
+    return fill(summary, width=96, break_long_words=False, break_on_hyphens=False)
 
 
 def main_loop():
