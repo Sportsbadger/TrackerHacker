@@ -71,3 +71,18 @@ def test_other_changes_keep_descriptions():
 
     assert "Logic:" in summary
     assert "1 AND 2" in summary
+
+
+def test_summary_wraps_long_lines():
+    repeated_phrase = " more detail" * 20
+    changes = [
+        {
+            "field": "Description",
+            "old_value": "Initial summary",
+            "new_value": f"Initial summary with{repeated_phrase}",
+        }
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes))
+
+    assert "\n" in summary
