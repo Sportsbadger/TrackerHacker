@@ -120,3 +120,30 @@ def test_query_tokens_parsed_with_brackets():
     assert "Query added: new_field__c" in summary
     assert "Query removed: old_field__c" in summary
     assert "SELECT [old_field__c]" not in summary
+
+
+def test_expanded_field_changes_show_details_when_tokens_missing():
+    changes = [
+        {
+            "field": "Fields",
+            "old_value": "alpha__c, beta__c",
+            "new_value": "beta__c, alpha__c",
+        }
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+
+    assert "values changed (expand to view details)" not in summary
+    assert summary.startswith("Fields:")
+    assert "->" in summary
+
+
+def test_duplicate_field_change_messages_collapsed():
+    changes = [
+        {"field": "Fields", "old_value": "alpha__c, beta__c", "new_value": "beta__c, alpha__c"},
+        {"field": "Fields", "old_value": "one__c, two__c", "new_value": "two__c, one__c"},
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes))
+
+    assert summary.count("Fields: values changed") == 1

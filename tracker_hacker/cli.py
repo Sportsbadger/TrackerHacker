@@ -129,10 +129,14 @@ def _summarize_history_changes(
     if not changes:
         return "No change details recorded"
 
-    added_fields = []
-    removed_fields = []
-    other_changes = []
-    contextual_field_changes = []
+    added_fields: list[str] = []
+    removed_fields: list[str] = []
+    other_changes: list[str] = []
+    contextual_field_changes: list[str] = []
+
+    def _append_unique(collection: list[str], value: str) -> None:
+        if value and value not in collection:
+            collection.append(value)
 
     for change in changes:
         field_name = str(change.get("field", "Unknown field")).strip() or "Unknown field"
@@ -150,11 +154,21 @@ def _summarize_history_changes(
                 return f"{field_name} {action}: {len(tokens)} {plural} (expand to view)"
 
             if added_tokens:
-                contextual_field_changes.append(_format_tokens(added_tokens, "added"))
+                _append_unique(contextual_field_changes, _format_tokens(added_tokens, "added"))
             if removed_tokens:
-                contextual_field_changes.append(_format_tokens(removed_tokens, "removed"))
-            if not added_tokens and not removed_tokens and not (_is_empty(old_val) and _is_empty(new_val)):
-                other_changes.append(f"{field_name}: values changed (expand to view details)")
+                _append_unique(contextual_field_changes, _format_tokens(removed_tokens, "removed"))
+
+            no_token_diff = not added_tokens and not removed_tokens and not (
+                _is_empty(old_val) and _is_empty(new_val)
+            )
+            if no_token_diff and expanded:
+                description = _describe_change(old_val, new_val)
+                _append_unique(contextual_field_changes, f"{field_name}: {description}")
+            elif no_token_diff:
+                _append_unique(
+                    other_changes,
+                    f"{field_name}: values changed (expand to view details)",
+                )
             continue
 
         if _is_empty(old_val) and not _is_empty(new_val):
