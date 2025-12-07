@@ -69,3 +69,43 @@ def test_resize_map_entry_rows_are_excluded_from_state_options():
     assert len(options) == 1
     assert options[0].fields_changed == ["Status"]
     assert all(change["field"] == "Status" for change in options[0].changes)
+
+
+def test_resize_map_fields_are_removed_when_mixed_in_single_row():
+    history_df = pd.DataFrame(
+        [
+            {
+                "Tracker": "Example",
+                "id Tracker": "1",
+                "Modify Date": "02/12/2023",
+                "Field": "Description, Resize Map Entries",
+                "Old Value": "old-desc",
+                "New Value": "new-desc",
+            },
+        ]
+    )
+
+    options = build_history_state_options(history_df, "Example")
+
+    assert len(options) == 1
+    assert options[0].fields_changed == ["Description"]
+    assert all(change["field"] == "Description" for change in options[0].changes)
+
+
+def test_pure_resize_map_rows_result_in_no_options():
+    history_df = pd.DataFrame(
+        [
+            {
+                "Tracker": "Example",
+                "id Tracker": "1",
+                "Modify Date": "03/12/2023",
+                "Field": "Resize Map",
+                "Old Value": "old",
+                "New Value": "new",
+            }
+        ]
+    )
+
+    options = build_history_state_options(history_df, "Example")
+
+    assert options == []

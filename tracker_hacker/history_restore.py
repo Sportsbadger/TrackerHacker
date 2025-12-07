@@ -53,11 +53,29 @@ def _parse_timestamp(dt_value: Any) -> Optional[pd.Timestamp]:
         return None
 
 
+def _clean_field_name(raw_field: Any) -> Optional[str]:
+    if raw_field is None or (isinstance(raw_field, float) and pd.isna(raw_field)):
+        return None
+
+    separators = [',', ';']
+    raw_text = str(raw_field)
+    for sep in separators[1:]:
+        raw_text = raw_text.replace(sep, separators[0])
+
+    field_parts = [part.strip() for part in raw_text.split(separators[0])]
+    filtered_parts = [part for part in field_parts if part and not _is_ignored_field(part)]
+    if not filtered_parts:
+        return None
+
+    return ', '.join(filtered_parts)
+
+
 def _get_field_name(row: pd.Series) -> Optional[str]:
     for col_name in HISTORY_FIELD_COLUMNS:
         field_val = row.get(col_name)
-        if pd.notna(field_val) and str(field_val).strip():
-            return str(field_val).strip()
+        cleaned = _clean_field_name(field_val)
+        if cleaned:
+            return cleaned
     return None
 
 
