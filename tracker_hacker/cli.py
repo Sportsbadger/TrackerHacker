@@ -1,4 +1,5 @@
 import re
+import shutil
 import warnings
 from contextlib import contextmanager
 from datetime import datetime
@@ -29,7 +30,13 @@ def _suppress_restore_warnings():
         yield
 
 
-def _summarize_history_changes(changes):
+def _summarize_history_changes(
+    changes,
+    *,
+    collapse_threshold: int = 5,
+    expanded: bool = False,
+    wrap_width: int | None = None,
+):
     def _is_empty(value):
         if value is None:
             return True
@@ -117,14 +124,17 @@ def _summarize_history_changes(changes):
         field_name_lower = field_name.lower()
         if field_name_lower in {"fields", "query"}:
             added_tokens, removed_tokens = _diff_field_tokens(old_val, new_val)
+
+            def _format_tokens(tokens: list[str], action: str) -> str:
+                if expanded or len(tokens) <= collapse_threshold:
+                    return f"{field_name} {action}: {', '.join(tokens)}"
+                plural = "fields" if len(tokens) != 1 else "field"
+                return f"{field_name} {action}: {len(tokens)} {plural} (expand to view)"
+
             if added_tokens:
-                contextual_field_changes.append(
-                    f"{field_name} added: {', '.join(added_tokens)}"
-                )
+                contextual_field_changes.append(_format_tokens(added_tokens, "added"))
             if removed_tokens:
-                contextual_field_changes.append(
-                    f"{field_name} removed: {', '.join(removed_tokens)}"
-                )
+                contextual_field_changes.append(_format_tokens(removed_tokens, "removed"))
             if not added_tokens and not removed_tokens and not (_is_empty(old_val) and _is_empty(new_val)):
                 description = _describe_change(old_val, new_val)
                 other_changes.append(f"{field_name}: {description}")
@@ -142,13 +152,20 @@ def _summarize_history_changes(changes):
 
     summary_parts = []
 
+    def _format_field_list(items: list[str], label: str) -> str:
+        unique_items = list(dict.fromkeys(items))
+        if expanded or len(unique_items) <= collapse_threshold:
+            return f"{label}: {', '.join(unique_items)}"
+        plural = "fields" if len(unique_items) != 1 else "field"
+        return f"{label}: {len(unique_items)} {plural} (expand to view)"
+
     if added_fields:
-        unique_added = list(dict.fromkeys(added_fields))
-        summary_parts.append(f"Fields added: {', '.join(unique_added)}")
+        summary_parts.append(_format_field_list(added_fields, "Fields added"))
     if removed_fields:
-        unique_removed = list(dict.fromkeys(removed_fields))
-        summary_parts.append(f"Fields removed: {', '.join(unique_removed)}")
-    summary_parts.extend(contextual_field_changes)
+        summary_parts.append(_format_field_list(removed_fields, "Fields removed"))
+
+    for contextual_entry in contextual_field_changes:
+        summary_parts.append(contextual_entry)
     summary_parts.extend(other_changes)
 
     if not summary_parts:
@@ -156,8 +173,10 @@ def _summarize_history_changes(changes):
 
     from textwrap import fill
 
+    terminal_width = wrap_width or shutil.get_terminal_size(fallback=(120, 20)).columns
+    adjusted_width = max(40, terminal_width)
     summary = " | ".join(summary_parts)
-    return fill(summary, width=96, break_long_words=False, break_on_hyphens=False)
+    return fill(summary, width=adjusted_width, break_long_words=False, break_on_hyphens=False)
 
 
 def main_loop():
@@ -458,6 +477,28 @@ def main_loop():
                                                     if chosen_state_option is None:
                                                         operation_flow_control = handle_cancel("Restore state selection cancelled.", return_to_menu=True)
                                                     else:
+                                                        try:
+                                                            show_detail = questionary.confirm(
+                                                                "Show detailed change list?",
+                                                                default=False
+                                                            ).ask()
+                                                        except KeyboardInterrupt:
+                                                            operation_flow_control = handle_cancel(
+                                                                "Detailed change prompt interrupted.", return_to_menu=True
+                                                            )
+                                                            continue
+                                                        if show_detail:
+                                                            detailed_summary = _summarize_history_changes(
+                                                                chosen_state_option.changes,
+                                                                expanded=True
+                                                            )
+                                                            print("\nDetailed change summary:")
+                                                            print(detailed_summary)
+                                                        elif show_detail is None:
+                                                            operation_flow_control = handle_cancel(
+                                                                "Detailed change prompt cancelled.", return_to_menu=True
+                                                            )
+                                                            continue
                                                         try:
                                                             restore_result = restore_tracker_state(
                                                                 state.main_df,

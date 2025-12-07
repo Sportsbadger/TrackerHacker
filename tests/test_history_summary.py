@@ -83,6 +83,24 @@ def test_summary_wraps_long_lines():
         }
     ]
 
-    summary = _strip_colors(_summarize_history_changes(changes))
+    summary = _strip_colors(_summarize_history_changes(changes, wrap_width=80))
 
     assert "\n" in summary
+
+
+def test_long_field_lists_collapse_until_expanded():
+    added = ", ".join(f"field_{idx}__c" for idx in range(7))
+    changes = [
+        {
+            "field": "Fields",
+            "old_value": "",
+            "new_value": added,
+        },
+    ]
+
+    collapsed = _strip_colors(_summarize_history_changes(changes))
+    assert "7 fields" in collapsed
+    assert "field_0__c" not in collapsed
+
+    expanded = _strip_colors(_summarize_history_changes(changes, expanded=True))
+    assert "field_0__c" in expanded and "field_6__c" in expanded
