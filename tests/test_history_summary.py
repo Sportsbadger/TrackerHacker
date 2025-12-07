@@ -135,7 +135,8 @@ def test_expanded_field_changes_show_details_when_tokens_missing():
 
     assert "values changed (expand to view details)" not in summary
     assert summary.startswith("Fields:")
-    assert "->" in summary
+    assert "alpha__c" in summary and "beta__c" in summary
+    assert "->" not in summary
 
 
 def test_duplicate_field_change_messages_collapsed():
@@ -147,3 +148,19 @@ def test_duplicate_field_change_messages_collapsed():
     summary = _strip_colors(_summarize_history_changes(changes))
 
     assert summary.count("Fields: values changed") == 1
+
+
+def test_expanded_query_changes_show_tokens_without_snippets():
+    changes = [
+        {
+            "field": "Query",
+            "old_value": "SELECT one__c, two__c FROM Obj WHERE Status = 'Open'",
+            "new_value": "SELECT one__c, two__c FROM Obj WHERE Status = 'Closed'",
+        }
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+
+    assert summary.startswith("Query:")
+    assert "one__c" in summary and "two__c" in summary
+    assert "Open" not in summary and "Closed" not in summary

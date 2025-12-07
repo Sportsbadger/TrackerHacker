@@ -59,7 +59,11 @@ def _summarize_history_changes(
             return []
 
         normalized = raw.replace('[', '').replace(']', '')
-        tokens = re.findall(r"[A-Za-z0-9_]+(?:__[cr])?(?:\.[A-Za-z0-9_]+(?:__[cr])?)*", normalized)
+        normalized_no_literals = re.sub(r"'[^']*'|\"[^\"]*\"", " ", normalized)
+        tokens = re.findall(
+            r"[A-Za-z0-9_]+(?:__[cr])?(?:\.[A-Za-z0-9_]+(?:__[cr])?)*",
+            normalized_no_literals,
+        )
         unique_tokens: list[str] = []
 
         def _add_unique(token: str) -> None:
@@ -161,10 +165,27 @@ def _summarize_history_changes(
             no_token_diff = not added_tokens and not removed_tokens and not (
                 _is_empty(old_val) and _is_empty(new_val)
             )
-            if no_token_diff and expanded:
-                description = _describe_change(old_val, new_val)
-                _append_unique(contextual_field_changes, f"{field_name}: {description}")
-            elif no_token_diff:
+            if not no_token_diff:
+                continue
+
+            display_tokens = list(
+                dict.fromkeys(
+                    _extract_field_tokens(old_val) + _extract_field_tokens(new_val)
+                )
+            )
+
+            if expanded:
+                if display_tokens:
+                    _append_unique(
+                        contextual_field_changes,
+                        f"{field_name}: {', '.join(display_tokens)} (values updated)",
+                    )
+                else:
+                    _append_unique(
+                        contextual_field_changes,
+                        f"{field_name}: values updated",
+                    )
+            else:
                 _append_unique(
                     other_changes,
                     f"{field_name}: values changed (expand to view details)",
