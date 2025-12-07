@@ -266,6 +266,70 @@ def _format_history_choice_title(option):
     return "\n".join(lines)
 
 
+def _prompt_restore_state_selection(
+    state_choices: list[Choice],
+    *,
+    select_fn=None,
+    confirm_fn=None,
+    apply_select_fn=None,
+):
+    select_fn = select_fn or questionary.select
+    confirm_fn = confirm_fn or questionary.confirm
+    apply_select_fn = apply_select_fn or questionary.select
+    operation_flow_control = None
+
+    while operation_flow_control != "return_to_menu":
+        try:
+            chosen_state_option = select_fn(
+                "Select restore state (grouped by Modify Date):",
+                choices=state_choices,
+            ).ask()
+        except KeyboardInterrupt:
+            return handle_cancel("Restore state selection interrupted.", return_to_menu=True), None
+
+        if chosen_state_option is None:
+            return handle_cancel("Restore state selection cancelled.", return_to_menu=True), None
+        if not hasattr(chosen_state_option, "changes"):
+            print("Invalid selection. Please choose a restore option.")
+            continue
+
+        try:
+            show_detail = confirm_fn("Show detailed change list?", default=False).ask()
+        except KeyboardInterrupt:
+            return handle_cancel("Detailed change prompt interrupted.", return_to_menu=True), None
+
+        if show_detail:
+            detailed_summary = _summarize_history_changes(
+                chosen_state_option.changes,
+                expanded=True,
+            )
+            print("\nDetailed change summary:")
+            print(detailed_summary)
+        elif show_detail is None:
+            return handle_cancel("Detailed change prompt cancelled.", return_to_menu=True), None
+
+        try:
+            apply_choice = apply_select_fn(
+                "Apply this restore state?",
+                choices=[
+                    Choice("Apply restore", "apply"),
+                    Choice("Back to history selection", "reselect"),
+                    Choice("<Cancel>", "cancel"),
+                ],
+            ).ask()
+        except KeyboardInterrupt:
+            return handle_cancel("Apply selection interrupted.", return_to_menu=True), None
+
+        if apply_choice in {None, "cancel"}:
+            return handle_cancel("Restore operation cancelled.", return_to_menu=True), None
+        if apply_choice == "reselect":
+            continue
+
+        return operation_flow_control, chosen_state_option
+
+    return operation_flow_control, None
+
+
 def main_loop():
     script_dir = Path(__file__).resolve().parent.parent
     output_dir = script_dir / 'outputs'
@@ -555,84 +619,35 @@ def main_loop():
                                                         )
                                                     state_choices.insert(0, Choice(title="<Cancel>", value=None))
 
-                                                    while operation_flow_control != "return_to_menu":
-                                                        chosen_state_option = questionary.select(
-                                                            "Select restore state (grouped by Modify Date):",
-                                                            choices=state_choices
-                                                        ).ask()
-                                                        if chosen_state_option is None:
-                                                            operation_flow_control = handle_cancel(
-                                                                "Restore state selection cancelled.", return_to_menu=True
-                                                            )
-                                                            continue
-                                                        if not hasattr(chosen_state_option, "changes"):
-                                                            print("Invalid selection. Please choose a restore option.")
-                                                            continue
-                                                        try:
-                                                            show_detail = questionary.confirm(
-                                                                "Show detailed change list?",
-                                                                default=False
-                                                            ).ask()
-                                                        except KeyboardInterrupt:
-                                                            operation_flow_control = handle_cancel(
-                                                                "Detailed change prompt interrupted.", return_to_menu=True
-                                                            )
-                                                            continue
-                                                        if show_detail:
-                                                            detailed_summary = _summarize_history_changes(
-                                                                chosen_state_option.changes,
-                                                                expanded=True
-                                                            )
-                                                            print("\nDetailed change summary:")
-                                                            print(detailed_summary)
-                                                        elif show_detail is None:
-                                                            operation_flow_control = handle_cancel(
-                                                                "Detailed change prompt cancelled.", return_to_menu=True
-                                                            )
-                                                            continue
+                                                    operation_flow_control, chosen_state_option = _prompt_restore_state_selection(state_choices)
+                                                    if operation_flow_control == "return_to_menu":
+                                                        break
 
-                                                        apply_choice = questionary.select(
-                                                            "Apply this restore state?",
-                                                            choices=[
-                                                                Choice("Apply restore", "apply"),
-                                                                Choice("Back to history selection", "reselect"),
-                                                                Choice("<Cancel>", "cancel"),
-                                                            ]
-                                                        ).ask()
+                                                    try:
+                                                        restore_result = restore_tracker_state(
+                                                            state.main_df,
+                                                            history_df,
+                                                            tracker_name_selected,
+                                                            chosen_state_option.restore_to
+                                                        )
+                                                    except ValueError as exc:
+                                                        print(f"Restore failed: {exc}")
+                                                        operation_flow_control = "return_to_menu"
+                                                    else:
+                                                        selector = state.main_df['Tracker'].astype(str) == restore_result.tracker_name
+                                                        state.main_df.loc[selector, restore_result.restored_row.index] = restore_result.restored_row.values
 
-                                                        if apply_choice in {None, "cancel"}:
-                                                            operation_flow_control = handle_cancel(
-                                                                "Restore operation cancelled.", return_to_menu=True
-                                                            )
-                                                            continue
-                                                        if apply_choice == "reselect":
-                                                            continue
-
-                                                        try:
-                                                            restore_result = restore_tracker_state(
-                                                                state.main_df,
-                                                                history_df,
-                                                                tracker_name_selected,
-                                                                chosen_state_option.restore_to
-                                                            )
-                                                        except ValueError as exc:
-                                                            print(f"Restore failed: {exc}")
-                                                            operation_flow_control = "return_to_menu"
-                                                        else:
-                                                            selector = state.main_df['Tracker'].astype(str) == restore_result.tracker_name
-                                                            state.main_df.loc[selector, restore_result.restored_row.index] = restore_result.restored_row.values
-
-                                                            ts_restore = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                                            report_paths = write_restore_report(
-                                                                restore_result,
-                                                                output_dir,
-                                                                filename_prefix=f"restore_{restore_result.tracker_name}_{ts_restore}"
-                                                            )
-                                                            print(
-                                                                f"\nRestored tracker '{restore_result.tracker_name}' back to {restore_result.restore_to}."
-                                                                f" Summary: {report_paths['summary']} | Restored row: {report_paths['restored_row']}"
-                                                            )
-                                                            operation_flow_control = "return_to_menu"
+                                                        ts_restore = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                                        report_paths = write_restore_report(
+                                                            restore_result,
+                                                            output_dir,
+                                                            filename_prefix=f"restore_{restore_result.tracker_name}_{ts_restore}"
+                                                        )
+                                                        print(
+                                                            f"\nRestored tracker '{restore_result.tracker_name}' back to {restore_result.restore_to}."
+                                                            f" Summary: {report_paths['summary']} | Restored row: {report_paths['restored_row']}"
+                                                        )
+                                                        operation_flow_control = "return_to_menu"
                 except KeyboardInterrupt:
                     operation_flow_control = handle_cancel("Restore setup interrupted.", return_to_menu=True)
             elif chosen_action == "audit":
