@@ -37,6 +37,7 @@ def _summarize_history_changes(
     collapse_threshold: int = 5,
     expanded: bool = False,
     wrap_width: int | None = None,
+    wrap: bool = True,
 ):
     def _is_empty(value):
         if value is None:
@@ -223,26 +224,34 @@ def _summarize_history_changes(
     if not summary_parts:
         return "No change details recorded"
 
+    summary = " | ".join(summary_parts)
+    if not wrap:
+        return summary
+
     from textwrap import fill
 
     terminal_width = wrap_width or shutil.get_terminal_size(fallback=(120, 20)).columns
     adjusted_width = max(40, terminal_width)
-    summary = " | ".join(summary_parts)
     return fill(summary, width=adjusted_width, break_long_words=False, break_on_hyphens=False)
 
 
 def _format_history_choice_title(option):
     restore_label = str(option.restore_to)
     prefix = f"{restore_label} - "
-    wrap_width = max(40, shutil.get_terminal_size(fallback=(120, 20)).columns - len(prefix))
-    summary = _summarize_history_changes(option.changes, wrap_width=wrap_width)
+    terminal_width = shutil.get_terminal_size(fallback=(120, 20)).columns
+    wrap_width = max(40, terminal_width - len(prefix))
+    summary = _summarize_history_changes(option.changes, wrap_width=wrap_width, wrap=False)
 
-    if "\n" not in summary:
-        return f"{prefix}{summary}"
+    from textwrap import fill
 
-    summary_lines = summary.splitlines()
-    padded_tail = indent("\n".join(summary_lines[1:]), " " * len(prefix))
-    return f"{prefix}{summary_lines[0]}\n{padded_tail}"
+    return fill(
+        summary,
+        width=wrap_width,
+        initial_indent=prefix,
+        subsequent_indent=" " * len(prefix),
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
 
 
 def main_loop():
