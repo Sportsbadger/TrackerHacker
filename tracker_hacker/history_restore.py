@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -57,17 +58,34 @@ def _clean_field_name(raw_field: Any) -> Optional[str]:
     if raw_field is None or (isinstance(raw_field, float) and pd.isna(raw_field)):
         return None
 
-    separators = [',', ';']
     raw_text = str(raw_field)
-    for sep in separators[1:]:
-        raw_text = raw_text.replace(sep, separators[0])
+    tokens = re.split(r'([,;])', raw_text)
 
-    field_parts = [part.strip() for part in raw_text.split(separators[0])]
-    filtered_parts = [part for part in field_parts if part and not _is_ignored_field(part)]
-    if not filtered_parts:
+    cleaned_tokens: List[str] = []
+    pending_delimiter: Optional[str] = None
+
+    for token in tokens:
+        if token in {',', ';'}:
+            pending_delimiter = token
+            continue
+
+        display_value = token.strip()
+        if not display_value or _is_ignored_field(display_value):
+            pending_delimiter = None
+            continue
+
+        if pending_delimiter and cleaned_tokens:
+            cleaned_tokens.append(pending_delimiter)
+            leading_ws_length = len(token) - len(token.lstrip())
+            cleaned_tokens.append(token[:leading_ws_length])
+
+        cleaned_tokens.append(display_value)
+        pending_delimiter = None
+
+    if not cleaned_tokens:
         return None
 
-    return ', '.join(filtered_parts)
+    return ''.join(cleaned_tokens).strip()
 
 
 def _get_field_name(row: pd.Series) -> Optional[str]:

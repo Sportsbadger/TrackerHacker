@@ -109,3 +109,24 @@ def test_pure_resize_map_rows_result_in_no_options():
     options = build_history_state_options(history_df, "Example")
 
     assert options == []
+
+
+def test_field_formatting_preserved_after_resizing_filter():
+    history_df = pd.DataFrame(
+        [
+            {
+                "Tracker": "Example",
+                "id Tracker": "1",
+                "Modify Date": "04/12/2023",
+                "Field": "Summary; Resize Map; Priority",
+                "Old Value": "old",
+                "New Value": "new",
+            }
+        ]
+    )
+
+    options = build_history_state_options(history_df, "Example")
+
+    assert len(options) == 1
+    assert options[0].fields_changed == ["Summary; Priority"]
+    assert all(change["field"] == "Summary; Priority" for change in options[0].changes)
