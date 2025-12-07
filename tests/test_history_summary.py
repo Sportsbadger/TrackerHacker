@@ -33,6 +33,7 @@ def _install_stub_modules() -> None:
 _install_stub_modules()
 
 from tracker_hacker.cli import _summarize_history_changes
+from tracker_hacker.history_restore import HistoryStateOption
 
 
 def _strip_colors(text: str) -> str:
@@ -104,3 +105,90 @@ def test_long_field_lists_collapse_until_expanded():
 
     expanded = _strip_colors(_summarize_history_changes(changes, expanded=True))
     assert "field_0__c" in expanded and "field_6__c" in expanded
+
+
+def test_query_tokens_parsed_with_brackets():
+    changes = [
+        {
+            "field": "Query",
+            "old_value": "SELECT [old_field__c] FROM Obj",
+            "new_value": "SELECT [new_field__c], [shared__c] FROM Obj",
+        }
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes))
+
+    assert "Query added: new_field__c" in summary
+    assert "Query removed: old_field__c" in summary
+    assert "SELECT [old_field__c]" not in summary
+
+
+def test_expanded_field_changes_show_details_when_tokens_missing():
+    changes = [
+        {
+            "field": "Fields",
+            "old_value": "alpha__c, beta__c",
+            "new_value": "beta__c, alpha__c",
+        }
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+
+    assert "values changed (expand to view details)" not in summary
+    assert summary.startswith("Fields:")
+    assert "alpha__c" in summary and "beta__c" in summary
+    assert "->" not in summary
+
+
+def test_duplicate_field_change_messages_collapsed():
+    changes = [
+        {"field": "Fields", "old_value": "alpha__c, beta__c", "new_value": "beta__c, alpha__c"},
+        {"field": "Fields", "old_value": "one__c, two__c", "new_value": "two__c, one__c"},
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes))
+
+    assert summary.count("Fields: values changed") == 1
+
+
+def test_expanded_query_changes_show_tokens_without_snippets():
+    changes = [
+        {
+            "field": "Query",
+            "old_value": "SELECT one__c, two__c FROM Obj WHERE Status = 'Open'",
+            "new_value": "SELECT one__c, two__c FROM Obj WHERE Status = 'Closed'",
+        }
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes, expanded=True))
+
+    assert summary.startswith("Query:")
+    assert "one__c" in summary and "two__c" in summary
+    assert "Open" not in summary and "Closed" not in summary
+
+
+def test_choice_titles_align_after_hyphen(monkeypatch):
+    from tracker_hacker import cli
+
+    monkeypatch.setattr(
+        cli.shutil,
+        "get_terminal_size",
+        lambda fallback=(120, 20): types.SimpleNamespace(columns=60, lines=20),
+    )
+
+    option = HistoryStateOption(
+        tracker_name="Test",
+        tracker_id="1",
+        restore_to="2024-07-01",
+        fields_changed=[],
+        changes=[{"field": "Description", "old_value": "a", "new_value": "b" * 80}],
+    )
+
+    title = _strip_colors(cli._format_history_choice_title(option))
+    lines = title.splitlines()
+
+    assert len(lines) > 1
+    prefix = f"{option.restore_to} - "
+    expected_indent = " " * (len(prefix) + cli.CHOICE_POINTER_PADDING)
+    assert lines[0].startswith(prefix)
+    assert lines[1].startswith(expected_indent)

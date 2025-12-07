@@ -4,6 +4,7 @@ import warnings
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from textwrap import indent
 
 import pandas as pd
 import questionary
@@ -36,6 +37,7 @@ def _summarize_history_changes(
     collapse_threshold: int = 5,
     expanded: bool = False,
     wrap_width: int | None = None,
+    wrap: bool = True,
 ):
     def _is_empty(value):
         if value is None:
@@ -56,12 +58,33 @@ def _summarize_history_changes(
         raw = _clean_string(value)
         if not raw:
             return []
-        tokens = re.findall(r"[A-Za-z0-9_]+(?:__[cr])?(?:\.[A-Za-z0-9_]+(?:__[cr])?)*", raw)
+
+        normalized = raw.replace('[', '').replace(']', '')
+        normalized_no_literals = re.sub(r"'[^']*'|\"[^\"]*\"", " ", normalized)
+        tokens = re.findall(
+            r"[A-Za-z0-9_]+(?:__[cr])?(?:\.[A-Za-z0-9_]+(?:__[cr])?)*",
+            normalized_no_literals,
+        )
         unique_tokens: list[str] = []
-        for token in tokens:
-            cleaned = token.strip().strip(',')
+
+        def _add_unique(token: str) -> None:
+            cleaned = token.strip().strip(',').strip('"\'')
             if cleaned and cleaned not in unique_tokens:
                 unique_tokens.append(cleaned)
+
+        for token in tokens:
+            _add_unique(token)
+
+        if unique_tokens:
+            return unique_tokens
+
+        # Fallback: split on common delimiters to capture bracketed or unconventional field names.
+        for segment in re.split(r"[\s,;|\n]+", normalized):
+            if not segment:
+                continue
+            if re.fullmatch(r"[A-Za-z0-9_\.]+(?:__[cr])?", segment):
+                _add_unique(segment)
+
         return unique_tokens
 
     def _diff_field_tokens(old_val: object, new_val: object) -> tuple[list[str], list[str]]:
@@ -111,10 +134,14 @@ def _summarize_history_changes(
     if not changes:
         return "No change details recorded"
 
-    added_fields = []
-    removed_fields = []
-    other_changes = []
-    contextual_field_changes = []
+    added_fields: list[str] = []
+    removed_fields: list[str] = []
+    other_changes: list[str] = []
+    contextual_field_changes: list[str] = []
+
+    def _append_unique(collection: list[str], value: str) -> None:
+        if value and value not in collection:
+            collection.append(value)
 
     for change in changes:
         field_name = str(change.get("field", "Unknown field")).strip() or "Unknown field"
@@ -132,12 +159,38 @@ def _summarize_history_changes(
                 return f"{field_name} {action}: {len(tokens)} {plural} (expand to view)"
 
             if added_tokens:
-                contextual_field_changes.append(_format_tokens(added_tokens, "added"))
+                _append_unique(contextual_field_changes, _format_tokens(added_tokens, "added"))
             if removed_tokens:
-                contextual_field_changes.append(_format_tokens(removed_tokens, "removed"))
-            if not added_tokens and not removed_tokens and not (_is_empty(old_val) and _is_empty(new_val)):
-                description = _describe_change(old_val, new_val)
-                other_changes.append(f"{field_name}: {description}")
+                _append_unique(contextual_field_changes, _format_tokens(removed_tokens, "removed"))
+
+            no_token_diff = not added_tokens and not removed_tokens and not (
+                _is_empty(old_val) and _is_empty(new_val)
+            )
+            if not no_token_diff:
+                continue
+
+            display_tokens = list(
+                dict.fromkeys(
+                    _extract_field_tokens(old_val) + _extract_field_tokens(new_val)
+                )
+            )
+
+            if expanded:
+                if display_tokens:
+                    _append_unique(
+                        contextual_field_changes,
+                        f"{field_name}: {', '.join(display_tokens)} (values updated)",
+                    )
+                else:
+                    _append_unique(
+                        contextual_field_changes,
+                        f"{field_name}: values updated",
+                    )
+            else:
+                _append_unique(
+                    other_changes,
+                    f"{field_name}: values changed (expand to view details)",
+                )
             continue
 
         if _is_empty(old_val) and not _is_empty(new_val):
@@ -171,12 +224,110 @@ def _summarize_history_changes(
     if not summary_parts:
         return "No change details recorded"
 
+    summary = " | ".join(summary_parts)
+    if not wrap:
+        return summary
+
     from textwrap import fill
 
     terminal_width = wrap_width or shutil.get_terminal_size(fallback=(120, 20)).columns
     adjusted_width = max(40, terminal_width)
-    summary = " | ".join(summary_parts)
     return fill(summary, width=adjusted_width, break_long_words=False, break_on_hyphens=False)
+
+
+CHOICE_POINTER_PADDING = 3
+
+
+def _format_history_choice_title(option):
+    restore_label = str(option.restore_to)
+    prefix = f"{restore_label} - "
+    pointer_adjusted_width = shutil.get_terminal_size(fallback=(120, 20)).columns - CHOICE_POINTER_PADDING
+    wrap_width = max(40, pointer_adjusted_width)
+    summary = _summarize_history_changes(option.changes, wrap_width=wrap_width, wrap=False)
+
+    from textwrap import wrap
+
+    available_width = max(10, wrap_width - len(prefix))
+    wrapped_segments = wrap(
+        summary,
+        width=available_width,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+
+    if not wrapped_segments:
+        return prefix.rstrip()
+
+    lines = [f"{prefix}{wrapped_segments[0]}"]
+    hanging_indent = " " * (len(prefix) + CHOICE_POINTER_PADDING)
+    for segment in wrapped_segments[1:]:
+        lines.append(f"{hanging_indent}{segment}")
+
+    return "\n".join(lines)
+
+
+def _prompt_restore_state_selection(
+    state_choices: list[Choice],
+    *,
+    select_fn=None,
+    confirm_fn=None,
+    apply_select_fn=None,
+):
+    select_fn = select_fn or questionary.select
+    confirm_fn = confirm_fn or questionary.confirm
+    apply_select_fn = apply_select_fn or questionary.select
+    operation_flow_control = None
+
+    while operation_flow_control != "return_to_menu":
+        try:
+            chosen_state_option = select_fn(
+                "Select restore state (grouped by Modify Date):",
+                choices=state_choices,
+            ).ask()
+        except KeyboardInterrupt:
+            return handle_cancel("Restore state selection interrupted.", return_to_menu=True), None
+
+        if chosen_state_option is None:
+            return handle_cancel("Restore state selection cancelled.", return_to_menu=True), None
+        if not hasattr(chosen_state_option, "changes"):
+            print("Invalid selection. Please choose a restore option.")
+            continue
+
+        try:
+            show_detail = confirm_fn("Show detailed change list?", default=False).ask()
+        except KeyboardInterrupt:
+            return handle_cancel("Detailed change prompt interrupted.", return_to_menu=True), None
+
+        if show_detail:
+            detailed_summary = _summarize_history_changes(
+                chosen_state_option.changes,
+                expanded=True,
+            )
+            print("\nDetailed change summary:")
+            print(detailed_summary)
+        elif show_detail is None:
+            return handle_cancel("Detailed change prompt cancelled.", return_to_menu=True), None
+
+        try:
+            apply_choice = apply_select_fn(
+                "Apply this restore state?",
+                choices=[
+                    Choice("Apply restore", "apply"),
+                    Choice("Back to history selection", "reselect"),
+                    Choice("<Cancel>", "cancel"),
+                ],
+            ).ask()
+        except KeyboardInterrupt:
+            return handle_cancel("Apply selection interrupted.", return_to_menu=True), None
+
+        if apply_choice in {None, "cancel"}:
+            return handle_cancel("Restore operation cancelled.", return_to_menu=True), None
+        if apply_choice == "reselect":
+            continue
+
+        return operation_flow_control, chosen_state_option
+
+    return operation_flow_control, None
 
 
 def main_loop():
@@ -462,68 +613,41 @@ def main_loop():
                                                 else:
                                                     state_choices = []
                                                     for opt in history_state_options:
-                                                        change_summary = _summarize_history_changes(opt.changes)
+                                                        formatted_title = _format_history_choice_title(opt)
                                                         state_choices.append(
-                                                            Choice(
-                                                                title=f"{opt.restore_to} – {change_summary}",
-                                                                value=opt
-                                                            )
+                                                            Choice(title=formatted_title, value=opt)
                                                         )
                                                     state_choices.insert(0, Choice(title="<Cancel>", value=None))
-                                                    chosen_state_option = questionary.select(
-                                                        "Select restore state (grouped by Modify Date):",
-                                                        choices=state_choices
-                                                    ).ask()
-                                                    if chosen_state_option is None:
-                                                        operation_flow_control = handle_cancel("Restore state selection cancelled.", return_to_menu=True)
-                                                    else:
-                                                        try:
-                                                            show_detail = questionary.confirm(
-                                                                "Show detailed change list?",
-                                                                default=False
-                                                            ).ask()
-                                                        except KeyboardInterrupt:
-                                                            operation_flow_control = handle_cancel(
-                                                                "Detailed change prompt interrupted.", return_to_menu=True
-                                                            )
-                                                            continue
-                                                        if show_detail:
-                                                            detailed_summary = _summarize_history_changes(
-                                                                chosen_state_option.changes,
-                                                                expanded=True
-                                                            )
-                                                            print("\nDetailed change summary:")
-                                                            print(detailed_summary)
-                                                        elif show_detail is None:
-                                                            operation_flow_control = handle_cancel(
-                                                                "Detailed change prompt cancelled.", return_to_menu=True
-                                                            )
-                                                            continue
-                                                        try:
-                                                            restore_result = restore_tracker_state(
-                                                                state.main_df,
-                                                                history_df,
-                                                                tracker_name_selected,
-                                                                chosen_state_option.restore_to
-                                                            )
-                                                        except ValueError as exc:
-                                                            print(f"Restore failed: {exc}")
-                                                            operation_flow_control = "return_to_menu"
-                                                        else:
-                                                            selector = state.main_df['Tracker'].astype(str) == restore_result.tracker_name
-                                                            state.main_df.loc[selector, restore_result.restored_row.index] = restore_result.restored_row.values
 
-                                                            ts_restore = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                                            report_paths = write_restore_report(
-                                                                restore_result,
-                                                                output_dir,
-                                                                filename_prefix=f"restore_{restore_result.tracker_name}_{ts_restore}"
-                                                            )
-                                                            print(
-                                                                f"\nRestored tracker '{restore_result.tracker_name}' back to {restore_result.restore_to}."
-                                                                f" Summary: {report_paths['summary']} | Restored row: {report_paths['restored_row']}"
-                                                            )
-                                                            operation_flow_control = "return_to_menu"
+                                                    operation_flow_control, chosen_state_option = _prompt_restore_state_selection(state_choices)
+                                                    if operation_flow_control == "return_to_menu":
+                                                        break
+
+                                                    try:
+                                                        restore_result = restore_tracker_state(
+                                                            state.main_df,
+                                                            history_df,
+                                                            tracker_name_selected,
+                                                            chosen_state_option.restore_to
+                                                        )
+                                                    except ValueError as exc:
+                                                        print(f"Restore failed: {exc}")
+                                                        operation_flow_control = "return_to_menu"
+                                                    else:
+                                                        selector = state.main_df['Tracker'].astype(str) == restore_result.tracker_name
+                                                        state.main_df.loc[selector, restore_result.restored_row.index] = restore_result.restored_row.values
+
+                                                        ts_restore = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                                        report_paths = write_restore_report(
+                                                            restore_result,
+                                                            output_dir,
+                                                            filename_prefix=f"restore_{restore_result.tracker_name}_{ts_restore}"
+                                                        )
+                                                        print(
+                                                            f"\nRestored tracker '{restore_result.tracker_name}' back to {restore_result.restore_to}."
+                                                            f" Summary: {report_paths['summary']} | Restored row: {report_paths['restored_row']}"
+                                                        )
+                                                        operation_flow_control = "return_to_menu"
                 except KeyboardInterrupt:
                     operation_flow_control = handle_cancel("Restore setup interrupted.", return_to_menu=True)
             elif chosen_action == "audit":
