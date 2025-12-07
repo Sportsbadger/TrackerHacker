@@ -203,7 +203,7 @@ def _summarize_history_changes(
         description = _describe_change(old_val, new_val)
         other_changes.append(f"{field_name}: {description}")
 
-    summary_parts = []
+    summary_lines = []
 
     def _format_field_list(items: list[str], label: str) -> str:
         unique_items = list(dict.fromkeys(items))
@@ -213,26 +213,32 @@ def _summarize_history_changes(
         return f"{label}: {len(unique_items)} {plural} (expand to view)"
 
     if added_fields:
-        summary_parts.append(_format_field_list(added_fields, "Fields added"))
+        summary_lines.append(_format_field_list(added_fields, "Fields added"))
     if removed_fields:
-        summary_parts.append(_format_field_list(removed_fields, "Fields removed"))
+        summary_lines.append(_format_field_list(removed_fields, "Fields removed"))
+    summary_lines.extend(contextual_field_changes)
+    summary_lines.extend(other_changes)
 
-    for contextual_entry in contextual_field_changes:
-        summary_parts.append(contextual_entry)
-    summary_parts.extend(other_changes)
-
-    if not summary_parts:
+    if not summary_lines:
         return "No change details recorded"
 
-    summary = " | ".join(summary_parts)
-    if not wrap:
-        return summary
+    def _wrap_line(text: str) -> str:
+        if not wrap:
+            return text
+        from textwrap import fill
 
-    from textwrap import fill
+        terminal_width = wrap_width or shutil.get_terminal_size(fallback=(120, 20)).columns
+        adjusted_width = max(40, terminal_width)
+        return fill(
+            text,
+            width=adjusted_width,
+            break_long_words=False,
+            break_on_hyphens=False,
+            subsequent_indent="  ",
+        )
 
-    terminal_width = wrap_width or shutil.get_terminal_size(fallback=(120, 20)).columns
-    adjusted_width = max(40, terminal_width)
-    return fill(summary, width=adjusted_width, break_long_words=False, break_on_hyphens=False)
+    formatted_lines = [f"- {_wrap_line(line)}" for line in summary_lines if line]
+    return "\n".join(formatted_lines)
 
 
 CHOICE_POINTER_PADDING = 3
