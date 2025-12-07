@@ -45,6 +45,25 @@ def _summarize_history_changes(changes):
             return ""
         return str(value).strip()
 
+    def _extract_field_tokens(value: object) -> list[str]:
+        raw = _clean_string(value)
+        if not raw:
+            return []
+        tokens = re.findall(r"[A-Za-z0-9_]+(?:__[cr])?(?:\.[A-Za-z0-9_]+(?:__[cr])?)*", raw)
+        unique_tokens: list[str] = []
+        for token in tokens:
+            cleaned = token.strip().strip(',')
+            if cleaned and cleaned not in unique_tokens:
+                unique_tokens.append(cleaned)
+        return unique_tokens
+
+    def _diff_field_tokens(old_val: object, new_val: object) -> tuple[list[str], list[str]]:
+        old_tokens = _extract_field_tokens(old_val)
+        new_tokens = _extract_field_tokens(new_val)
+        added = [tok for tok in new_tokens if tok not in old_tokens]
+        removed = [tok for tok in old_tokens if tok not in new_tokens]
+        return added, removed
+
     def _window_excerpt(text, center_start, center_end, context=25, max_len=120):
         """Return a short excerpt around the changed region."""
         start = max(center_start - context, 0)
@@ -92,11 +111,28 @@ def _summarize_history_changes(changes):
     added_fields = []
     removed_fields = []
     other_changes = []
+    contextual_field_changes = []
 
     for change in changes:
         field_name = str(change.get("field", "Unknown field")).strip() or "Unknown field"
         old_val = change.get("old_value")
         new_val = change.get("new_value")
+
+        field_name_lower = field_name.lower()
+        if field_name_lower in {"fields", "query"}:
+            added_tokens, removed_tokens = _diff_field_tokens(old_val, new_val)
+            if added_tokens:
+                contextual_field_changes.append(
+                    f"{add_color}{field_name} added: {', '.join(added_tokens)}{reset_color}"
+                )
+            if removed_tokens:
+                contextual_field_changes.append(
+                    f"{remove_color}{field_name} removed: {', '.join(removed_tokens)}{reset_color}"
+                )
+            if not added_tokens and not removed_tokens and not (_is_empty(old_val) and _is_empty(new_val)):
+                description = _describe_change(old_val, new_val)
+                other_changes.append(f"{field_name}: {description}")
+            continue
 
         if _is_empty(old_val) and not _is_empty(new_val):
             added_fields.append(field_name)
@@ -120,6 +156,7 @@ def _summarize_history_changes(changes):
         summary_parts.append(
             f"{remove_color}Fields removed: {', '.join(unique_removed)}{reset_color}"
         )
+    summary_parts.extend(contextual_field_changes)
     summary_parts.extend(other_changes)
 
     return " | ".join(summary_parts)
