@@ -1,6 +1,7 @@
 import re
 import sys
 import types
+import pytest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,14 +11,17 @@ if str(ROOT) not in sys.path:
 
 def _install_stub_modules() -> None:
     if "pandas" not in sys.modules:
-        pandas_stub = types.ModuleType("pandas")
-        pandas_stub.Timestamp = type("Timestamp", (), {})
-        pandas_stub.DataFrame = type("DataFrame", (), {})
-        pandas_stub.Series = type("Series", (), {})
-        pandas_stub.to_datetime = lambda *args, **kwargs: None
-        pandas_stub.isna = lambda val: val != val
-        pandas_stub.errors = types.SimpleNamespace(SettingWithCopyWarning=RuntimeWarning)
-        sys.modules["pandas"] = pandas_stub
+        try:
+            import pandas  # type: ignore  # noqa: F401
+        except ModuleNotFoundError:
+            pandas_stub = types.ModuleType("pandas")
+            pandas_stub.Timestamp = type("Timestamp", (), {})
+            pandas_stub.DataFrame = type("DataFrame", (), {})
+            pandas_stub.Series = type("Series", (), {})
+            pandas_stub.to_datetime = lambda *args, **kwargs: None
+            pandas_stub.isna = lambda val: val != val
+            pandas_stub.errors = types.SimpleNamespace(SettingWithCopyWarning=RuntimeWarning)
+            sys.modules["pandas"] = pandas_stub
 
     if "questionary" not in sys.modules:
         questionary_stub = types.ModuleType("questionary")
@@ -33,7 +37,7 @@ def _install_stub_modules() -> None:
 _install_stub_modules()
 
 from tracker_hacker.cli import _summarize_history_changes
-from tracker_hacker.history_restore import HistoryStateOption
+from tracker_hacker.history_restore import HistoryStateOption, build_history_state_options
 
 
 def _strip_colors(text: str) -> str:
@@ -145,7 +149,7 @@ def test_duplicate_field_change_messages_collapsed():
 
     summary = _strip_colors(_summarize_history_changes(changes))
 
-    assert summary.count("Fields: values changed") == 1
+    assert summary == "No change details recorded"
 
 
 def test_expanded_query_changes_show_tokens_without_snippets():
@@ -207,6 +211,61 @@ def test_expanded_summary_surfaces_added_and_removed_tokens():
     assert "Fields removed: alpha__c" in summary
     assert "Query added: beta__c, gamma__c" in summary
     assert "Query removed: alpha__c" in summary
+
+
+def test_reordered_field_list_is_ignored_in_collapsed_summary():
+    changes = [
+        {
+            "field": "Fields",
+            "old_value": "alpha__c, beta__c, gamma__c",
+            "new_value": "gamma__c, alpha__c, beta__c",
+        }
+    ]
+
+    summary = _strip_colors(_summarize_history_changes(changes))
+
+    assert summary == "No change details recorded"
+
+
+def test_history_state_options_drop_reorder_and_resize_map():
+    import pandas as pd
+
+    try:
+        history_df = pd.DataFrame(
+            [
+                {
+                    "Tracker": "Test Tracker",
+                    "id Tracker": "1",
+                    "Modify Date": "2024-07-01",
+                    "Field": "Fields",
+                    "Old Value": "alpha__c, beta__c",
+                    "New Value": "beta__c, alpha__c",
+                },
+                {
+                    "Tracker": "Test Tracker",
+                    "id Tracker": "1",
+                    "Modify Date": "2024-07-02",
+                    "Field": "Fields",
+                    "Old Value": "alpha__c, beta__c",
+                    "New Value": "alpha__c, beta__c, gamma__c",
+                },
+                {
+                    "Tracker": "Test Tracker",
+                    "id Tracker": "1",
+                    "Modify Date": "2024-07-02",
+                    "Field": "Resize Map",
+                    "Old Value": "old resize",
+                    "New Value": "new resize",
+                },
+            ]
+        )
+    except TypeError:
+        pytest.skip("pandas stubbed; real DataFrame required")
+
+    options = build_history_state_options(history_df, "Test Tracker")
+
+    assert len(options) == 1
+    assert options[0].fields_changed == ["Fields"]
 
 
 def test_choice_titles_align_after_hyphen(monkeypatch):

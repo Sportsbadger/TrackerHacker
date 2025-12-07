@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+import re
 
 
 HISTORY_REQUIRED_COLUMNS = [
@@ -66,6 +67,47 @@ def _is_ignored_field(field_name: Optional[str]) -> bool:
         return False
     normalized = str(field_name).strip().lower()
     return normalized in {"label map", "resize map"}
+
+
+def _extract_field_tokens(value: Any) -> list[str]:
+    raw = "" if value is None else str(value).strip()
+    if not raw:
+        return []
+
+    normalized = raw.replace("[", "").replace("]", "")
+    normalized_no_literals = re.sub(r"'[^']*'|\"[^\"]*\"", " ", normalized)
+    tokens = re.findall(
+        r"[A-Za-z0-9_]+(?:__[cr])?(?:\.[A-Za-z0-9_]+(?:__[cr])?)*",
+        normalized_no_literals,
+    )
+    unique_tokens: list[str] = []
+
+    def _add_unique(token: str) -> None:
+        cleaned = token.strip().strip(",").strip("\"'")
+        if cleaned and cleaned not in unique_tokens:
+            unique_tokens.append(cleaned)
+
+    for token in tokens:
+        _add_unique(token)
+
+    if unique_tokens:
+        return unique_tokens
+
+    for segment in re.split(r"[\s,;|\n]+", normalized):
+        if not segment:
+            continue
+        if re.fullmatch(r"[A-Za-z0-9_\.]+(?:__[cr])?", segment):
+            _add_unique(segment)
+
+    return unique_tokens
+
+
+def _is_reorder_only(old_val: Any, new_val: Any) -> bool:
+    old_tokens = _extract_field_tokens(old_val)
+    new_tokens = _extract_field_tokens(new_val)
+    if not old_tokens or not new_tokens:
+        return False
+    return set(old_tokens) == set(new_tokens) and old_tokens != new_tokens
 
 
 def _format_value(val: Any) -> str:
@@ -139,6 +181,12 @@ def get_history_changes_for_timestamp(history_df: pd.DataFrame, tracker_name: st
         if _is_ignored_field(field_name):
             continue
 
+        field_name_lower = str(field_name).strip().lower()
+        if field_name_lower in {"fields", "query"} and _is_reorder_only(
+            row.get('Old Value'), row.get('New Value')
+        ):
+            continue
+
         changes.append({
             'field': field_name,
             'old_value': row.get('Old Value'),
@@ -179,6 +227,13 @@ def build_history_state_options(history_df: pd.DataFrame, tracker_name: str) -> 
 
     tracker_history['__field_name'] = tracker_history.apply(_get_field_name, axis=1)
     tracker_history = tracker_history[~tracker_history['__field_name'].apply(_is_ignored_field)].copy()
+    tracker_history['__is_reorder_only'] = tracker_history.apply(
+        lambda row: _is_reorder_only(row.get('Old Value'), row.get('New Value'))
+        if str(row.get('__field_name', '')).strip().lower() in {"fields", "query"}
+        else False,
+        axis=1,
+    )
+    tracker_history = tracker_history[~tracker_history['__is_reorder_only']].copy()
 
     if tracker_history.empty:
         return []
