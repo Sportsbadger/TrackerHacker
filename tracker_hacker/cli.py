@@ -235,7 +235,7 @@ def _summarize_history_changes(
     return fill(summary, width=adjusted_width, break_long_words=False, break_on_hyphens=False)
 
 
-CHOICE_POINTER_PADDING = 2
+CHOICE_POINTER_PADDING = 3
 
 
 def _format_history_choice_title(option):
@@ -555,7 +555,7 @@ def main_loop():
                                                         )
                                                     state_choices.insert(0, Choice(title="<Cancel>", value=None))
 
-                                                    while True:
+                                                    while operation_flow_control != "return_to_menu":
                                                         chosen_state_option = questionary.select(
                                                             "Select restore state (grouped by Modify Date):",
                                                             choices=state_choices
@@ -564,7 +564,7 @@ def main_loop():
                                                             operation_flow_control = handle_cancel(
                                                                 "Restore state selection cancelled.", return_to_menu=True
                                                             )
-                                                            break
+                                                            continue
                                                         if not hasattr(chosen_state_option, "changes"):
                                                             print("Invalid selection. Please choose a restore option.")
                                                             continue
@@ -577,7 +577,7 @@ def main_loop():
                                                             operation_flow_control = handle_cancel(
                                                                 "Detailed change prompt interrupted.", return_to_menu=True
                                                             )
-                                                            break
+                                                            continue
                                                         if show_detail:
                                                             detailed_summary = _summarize_history_changes(
                                                                 chosen_state_option.changes,
@@ -589,7 +589,7 @@ def main_loop():
                                                             operation_flow_control = handle_cancel(
                                                                 "Detailed change prompt cancelled.", return_to_menu=True
                                                             )
-                                                            break
+                                                            continue
 
                                                         apply_choice = questionary.select(
                                                             "Apply this restore state?",
@@ -604,7 +604,7 @@ def main_loop():
                                                             operation_flow_control = handle_cancel(
                                                                 "Restore operation cancelled.", return_to_menu=True
                                                             )
-                                                            break
+                                                            continue
                                                         if apply_choice == "reselect":
                                                             continue
 
@@ -633,7 +633,6 @@ def main_loop():
                                                                 f" Summary: {report_paths['summary']} | Restored row: {report_paths['restored_row']}"
                                                             )
                                                             operation_flow_control = "return_to_menu"
-                                                        break
                 except KeyboardInterrupt:
                     operation_flow_control = handle_cancel("Restore setup interrupted.", return_to_menu=True)
             elif chosen_action == "audit":
