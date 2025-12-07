@@ -235,23 +235,35 @@ def _summarize_history_changes(
     return fill(summary, width=adjusted_width, break_long_words=False, break_on_hyphens=False)
 
 
+CHOICE_POINTER_PADDING = 2
+
+
 def _format_history_choice_title(option):
     restore_label = str(option.restore_to)
     prefix = f"{restore_label} - "
-    terminal_width = shutil.get_terminal_size(fallback=(120, 20)).columns
-    wrap_width = max(40, terminal_width - len(prefix))
+    pointer_adjusted_width = shutil.get_terminal_size(fallback=(120, 20)).columns - CHOICE_POINTER_PADDING
+    wrap_width = max(40, pointer_adjusted_width)
     summary = _summarize_history_changes(option.changes, wrap_width=wrap_width, wrap=False)
 
-    from textwrap import fill
+    from textwrap import wrap
 
-    return fill(
+    available_width = max(10, wrap_width - len(prefix))
+    wrapped_segments = wrap(
         summary,
-        width=wrap_width,
-        initial_indent=prefix,
-        subsequent_indent=" " * len(prefix),
+        width=available_width,
         break_long_words=False,
         break_on_hyphens=False,
     )
+
+    if not wrapped_segments:
+        return prefix.rstrip()
+
+    lines = [f"{prefix}{wrapped_segments[0]}"]
+    hanging_indent = " " * (len(prefix) + CHOICE_POINTER_PADDING)
+    for segment in wrapped_segments[1:]:
+        lines.append(f"{hanging_indent}{segment}")
+
+    return "\n".join(lines)
 
 
 def main_loop():
