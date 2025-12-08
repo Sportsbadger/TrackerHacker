@@ -43,13 +43,28 @@ python TrackerHacker.py
 ```
 You will be prompted for the path to your Sitetracker export CSV (or the directory containing it). If a directory is provided and multiple CSVs are found, you will be asked to pick one.
 
-### Typical workflow
-1. **Load data**: Select the CSV export. The CLI validates required columns and stores the dataframe in memory.
-2. **Audit**: Scan for canonical fields across `Fields`, `Filters`, `Logic`, `Query`, `Formatting`, `OrderBy(Long)`, `ResizeMap`, and `Label Map`. Reports can be summary index lists or detailed column-by-column breakdowns.
-3. **Identify modifications**: Detect where fields need removal, swapping, or addition before committing changes.
-4. **Modify trackers**: Apply removals, swaps, and additions to selected rows. Backup copies of affected rows are preserved. Updated CSVs are written under `outputs/` with timestamps.
-5. **Review outputs**: CSVs and JSON reports are saved in `outputs/`; the CLI can prompt you to open reports directly.
-6. **Restore from history**: Load a tracker history CSV to reconstruct a single tracker to a specific "Modify Date" point in time, update the in-memory dataset, and save a restore report.
+### User guide
+The CLI is menu-driven. Every action writes artifacts into `outputs/` alongside console summaries so you can trace what changed.
+
+1. **Load New Source Data**: Pick your Sitetracker tracker CSV (or a directory containing it). The loader verifies required columns and stores the dataframe in memory.
+   - Example — single file: point to `~/Downloads/export.csv` and confirm the required columns check passes. The main menu will now show the file name in the header so you know data is loaded.
+   - Example — multiple files: point to `~/Downloads/` when it contains `TrackerExportA.csv` and `TrackerExportB.csv`; the CLI prompts you to pick one, then caches the selection for subsequent actions.
+2. **Audit Fields**: Scan for canonical fields across `Fields`, `Filters`, `Logic`, `Query`, `Formatting`, `OrderBy(Long)`, `ResizeMap`, and `Label Map`. Choose summary mode (rows by index) or detailed mode (per-column contexts).
+   - Example — summary audit: choose summary mode to quickly find row indices that reference `Legacy_Field__c`. The console prints the row numbers and the report lands in `outputs/audit_summary_<timestamp>.csv`.
+   - Example — detailed audit: run detailed mode to capture column-level context for `Legacy_Field__c` and `Old_Object__c.Old_Field__c`. Open `outputs/audit_detailed_<timestamp>.csv` to see which columns (e.g., `Logic`, `Filters`) contain the matches.
+3. **Remove Fields**: Use a previously generated audit CSV to strip contextual field paths from matching trackers. You can point at a single audit file or a directory of audit outputs.
+   - Example — targeted removal: select `outputs/audit_detailed_<timestamp>.csv` that lists `Legacy_Field__c` occurrences. The tool removes those references from `Fields`, `Filters`, `Logic`, and `Query`, writes cleaned CSVs, and creates backups under `outputs/backups/`.
+   - Example — bulk removal: provide a directory of audit reports (e.g., multiple teams contributed audits). TrackerHacker batches the removals, then prints a per-file summary of how many rows and columns changed.
+4. **Swap Fields**: Replace outdated field paths with new ones. Provide swap pairs manually (`OldFullFieldAPI,NewFullFieldAPI`) or load a swap-pairs CSV (columns `OldFieldAPI`, `NewFieldAPI`).
+   - Example — manual swap: enter `OldObject__c.OldField__c,NewObject__c.NewField__c` to rewrite references across `Fields`, `Filters`, `Logic`, and `Query`; the console reports the number of replacements.
+   - Example — CSV-driven swap: load `swap_pairs.csv` containing `OldFieldAPI,NewFieldAPI` columns. After applying, inspect `outputs/modified_<timestamp>.csv` to confirm every `OldFieldAPI` value is replaced.
+5. **Add Fields**: Append canonical fields that are missing from trackers. You can paste a comma-separated list and select which tracker rows to update.
+   - Example — add missing ownership fields: paste `Account.Name,Account.OwnerId` and select all trackers. The CLI deduplicates entries, appends them to the `Fields` column, and writes the result to `outputs/modified_<timestamp>.csv`.
+   - Example — row-scoped add: select only trackers flagged by the audit (e.g., rows 3, 9, and 14) to add `Site__c.Region__c` without touching other rows.
+6. **Restore Tracker**: Reconstruct a single tracker from a history CSV to a target "Modify Date". After loading the history file, pick the tracker by name, choose the restore point, and optionally apply the restored row to the in-memory dataset.
+   - Example — point-in-time restore: select `TrackerHistory.csv`, choose tracker "Network Rollout", and restore to `2024-03-01T12:00:00`. A restore report and snapshot CSV are written under `outputs/`.
+   - Example — dry-run review: load the history, pick a tracker, and stop before applying the restored row. Inspect the generated report to verify changes before committing them to the active dataset.
+7. **Exit**: Cleanly quit the application. Keyboard interrupts at any prompt are treated as cancel and return you to the main menu instead of terminating abruptly.
 
 ## Module and function guide
 Use these functions directly if you prefer scripting instead of the interactive CLI:
