@@ -65,7 +65,7 @@ def _is_ignored_field(field_name: Optional[str]) -> bool:
     if field_name is None:
         return False
     normalized = str(field_name).strip().lower()
-    return normalized in {"resizemap", "label map"}
+    return normalized in {"resizemap", "resize map", "label map"}
 
 
 def _format_value(val: Any) -> str:
