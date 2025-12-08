@@ -1,6 +1,6 @@
 # TrackerHacker
 
-TrackerHacker is a CLI toolkit for auditing and modifying Sitetracker tracker exports. The tools load tracker CSV exports, flag problematic rows, and generate cleaned copies so you can re-import trackers with confidence. A step-by-step walkthrough with programmatic examples is available in [docs/USAGE.md](docs/USAGE.md).
+TrackerHacker is a CLI toolkit for auditing and modifying Sitetracker tracker exports. The tools load tracker CSV exports, flag problematic rows, and generate cleaned or updatyed copies so you can re-import trackers with confidence. A step-by-step walkthrough with programmatic examples is available in [docs/USAGE.md](docs/USAGE.md).
 
 ## Prerequisites
 - Python 3.10+
@@ -49,14 +49,14 @@ The CLI is menu-driven. Every action writes artifacts into `outputs/` alongside 
 1. **Load New Source Data**: Pick your Sitetracker tracker CSV (or a directory containing it). The loader verifies required columns and stores the dataframe in memory.
    - Example — single file: point to `~/Downloads/export.csv` and confirm the required columns check passes. The main menu will now show the file name in the header so you know data is loaded.
    - Example — multiple files: point to `~/Downloads/` when it contains `TrackerExportA.csv` and `TrackerExportB.csv`; the CLI prompts you to pick one, then caches the selection for subsequent actions.
-2. **Audit Fields**: Scan for canonical fields across `Fields`, `Filters`, `Logic`, `Query`, `Formatting`, `OrderBy(Long)`, `ResizeMap`, and `Label Map`. Choose summary mode (rows by index) or detailed mode (per-column contexts).
+2. **Audit Fields**: Scan for fields across `Fields`, `Filters`, `Logic`, `Query`, `Formatting`, `OrderBy(Long)`, `ResizeMap`, and `Label Map`. Choose summary mode (rows by index) or detailed mode (per-column contexts).
    - Example — summary audit: choose summary mode to quickly find row indices that reference `Legacy_Field__c`. The console prints the row numbers and the report lands in `outputs/audit_summary_<timestamp>.csv`.
-   - Example — detailed audit: run detailed mode to capture column-level context for `Legacy_Field__c` and `Old_Object__c.Old_Field__c`. Open `outputs/audit_detailed_<timestamp>.csv` to see which columns (e.g., `Logic`, `Filters`) contain the matches.
-3. **Remove Fields**: Use a previously generated audit CSV to strip contextual field paths from matching trackers. You can point at a single audit file or a directory of audit outputs.
+   - Example — detailed audit: run detailed mode to capture column-level context for `Legacy_Field__c` and `Old_Object__r.Old_Field__c`. Open `outputs/audit_detailed_<timestamp>.csv` to see which columns (e.g., `Logic`, `Filters`) contain the matches.
+3. **Remove Fields**: Use a previously generated audit CSV to remove field paths from matching trackers. You can point at a single audit file or a directory of audit outputs.
    - Example — targeted removal: select `outputs/audit_detailed_<timestamp>.csv` that lists `Legacy_Field__c` occurrences. The tool removes those references from `Fields`, `Filters`, `Logic`, and `Query`, writes cleaned CSVs, and creates backups under `outputs/backups/`.
    - Example — bulk removal: provide a directory of audit reports (e.g., multiple teams contributed audits). TrackerHacker batches the removals, then prints a per-file summary of how many rows and columns changed.
-4. **Swap Fields**: Replace outdated field paths with new ones. Provide swap pairs manually (`OldFullFieldAPI,NewFullFieldAPI`) or load a swap-pairs CSV (columns `OldFieldAPI`, `NewFieldAPI`).
-   - Example — manual swap: enter `OldObject__c.OldField__c,NewObject__c.NewField__c` to rewrite references across `Fields`, `Filters`, `Logic`, and `Query`; the console reports the number of replacements.
+4. **Swap Fields**: Replaces specified fields with new ones. Provide swap pairs manually (`OldFullFieldAPI,NewFullFieldAPI`) or load a swap-pairs CSV (columns `OldFieldAPI`, `NewFieldAPI`).
+   - Example — manual swap: enter `OldObject__r.OldField__c,OldObject__r.NewField__c` to rewrite references across `Fields`, `Filters`, `Logic`, and `Query`; the console reports the number of replacements.
    - Example — CSV-driven swap: load `swap_pairs.csv` containing `OldFieldAPI,NewFieldAPI` columns. After applying, inspect `outputs/modified_<timestamp>.csv` to confirm every `OldFieldAPI` value is replaced.
 5. **Add Fields**: Append canonical fields that are missing from trackers. You can paste a comma-separated list and select which tracker rows to update.
    - Example — add missing ownership fields: paste `Account.Name,Account.OwnerId` and select all trackers. The CLI deduplicates entries, appends them to the `Fields` column, and writes the result to `outputs/modified_<timestamp>.csv`.
