@@ -375,15 +375,18 @@ def main_loop():
         else:
             print("No data currently loaded. Please load source data.")
 
-        main_menu_choices = [Choice("Load New Source Data", value="load_data")]
         if state.main_df is not None:
-            main_menu_choices.extend([
-                Choice("Remove Fields (from Audit file)", value="remove"),
-                Choice("Swap Fields", value="swap"),
-                Choice("Add Field", value="add"),
+            main_menu_choices = [
                 Choice("Audit Fields", value="audit"),
-                Choice("Restore Tracker from History", value="restore"),
-            ])
+                Choice("Remove Fields", value="remove"),
+                Choice("Swap Fields", value="swap"),
+                Choice("Add Fields", value="add"),
+                Choice("Restore Tracker", value="restore"),
+                Choice("Load New Source Data", value="load_data"),
+            ]
+        else:
+            main_menu_choices = [Choice("Load New Source Data", value="load_data")]
+
         main_menu_choices.append(Choice("Exit", value="exit"))
 
         chosen_action = None
