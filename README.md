@@ -1,6 +1,6 @@
 # TrackerHacker
 
-TrackerHacker is a CLI toolkit for auditing and modifying Sitetracker tracker exports. The tools load tracker CSV exports, flag problematic rows, and generate cleaned or updatyed copies so you can re-import trackers with confidence. A step-by-step walkthrough with programmatic examples is available in [docs/USAGE.md](docs/USAGE.md).
+TrackerHacker is a CLI toolkit for auditing and modifying Sitetracker tracker exports. The tools load tracker CSV exports, flag problematic rows, and generate cleaned or updated copies so you can re-import trackers with confidence. A step-by-step walkthrough with programmatic examples is available in [docs/USAGE.md](docs/USAGE.md).
 
 ## Prerequisites
 - Python 3.10+
